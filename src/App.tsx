@@ -10,6 +10,7 @@ import { useHighScore } from './hooks/useHighScore';
 
 
 import { CyberSnake } from './games/snake';
+import { TronPong } from './games/pong';
 
 const ARCADE_GAMES: GameMetadata[] = [
   {
@@ -63,7 +64,9 @@ export default function App() {
   const [activeGame, setActiveGame] = useState<GameId | null>(null);
   const [crtActive, setCrtActive] = useState<boolean>(true);
   const [soundActive, setSoundActive] = useState<boolean>(true);
+
   const { highScore: snakeHighScore } = useHighScore('snake');
+  const { highScore: pongHighScore } = useHighScore('pong');
 
   const toggleSound = () => {
     const nextState = !soundActive;
@@ -144,7 +147,13 @@ export default function App() {
                 <GameCard
                   key={game.id}
                   game={game}
-                  highScore={game.id === 'snake' ? snakeHighScore : 0}
+                  highScore={
+                  game.id === 'snake'
+                    ? snakeHighScore
+                    : game.id === 'pong'
+                    ? pongHighScore
+                    : 0
+                }
                   onSelect={handleSelectGame}
                 />
               ))}
@@ -152,6 +161,8 @@ export default function App() {
           </div>
         ) : activeGame === 'snake' ? (
           <CyberSnake onExit={() => setActiveGame(null)} />
+        ) : activeGame === 'pong' ? (
+          <TronPong onExit={() => setActiveGame(null)} />
         ) : (
           <div className="border border-cyan-500/40 p-12 bg-black/70 backdrop-blur-md text-center font-arcade max-w-lg">
             <ShieldAlert className="w-12 h-12 text-yellow-400 mx-auto mb-4 animate-bounce" />
