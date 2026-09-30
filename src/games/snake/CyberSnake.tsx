@@ -1,5 +1,5 @@
 // src/games/snake/CyberSnake.tsx
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { sound } from '../../audio/NeonAudioSynth';
 import { useHighScore } from '../../hooks/useHighScore';
 import type { Point, Direction, SnakeParticle } from './types';
@@ -13,7 +13,7 @@ const GRID_SIZE = 20; // 20x20 grid
 const CELL_SIZE = 20; // 400x400 canvas
 const INITIAL_SPEED = 110; // ms per step
 
-export const CyberSnake: React.FC<CyberSnakeProps> = ({ onExit }) => {
+const CyberSnakeComponent: React.FC<CyberSnakeProps> = ({ onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { highScore, recordScore } = useHighScore('snake');
 
@@ -21,7 +21,7 @@ export const CyberSnake: React.FC<CyberSnakeProps> = ({ onExit }) => {
   const [gameOver, setGameOver] = useState(false);
   const [isNewHigh, setIsNewHigh] = useState(false);
 
-  // Engine state stored in refs so the requestAnimationFrame loop always reads fresh values
+  // Engine state stored in refs
   const snakeRef = useRef<Point[]>([
     { x: 10, y: 10 },
     { x: 10, y: 11 },
@@ -34,6 +34,10 @@ export const CyberSnake: React.FC<CyberSnakeProps> = ({ onExit }) => {
   const lastTickRef = useRef<number>(0);
   const scoreRef = useRef<number>(0);
   const gameOverRef = useRef<boolean>(false);
+
+  // Keep a stable ref to recordScore so the canvas loop doesn't re-mount
+  const recordScoreRef = useRef(recordScore);
+  recordScoreRef.current = recordScore;
 
   // Spawn food at open grid location
   const spawnFood = useCallback(() => {
@@ -130,7 +134,7 @@ export const CyberSnake: React.FC<CyberSnakeProps> = ({ onExit }) => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [changeDirection, resetGame]);
 
-  // Main Canvas & Game Loop
+  // Main Canvas & Game Loop (Runs ONCE on mount)
   useEffect(() => {
     spawnFood();
     let animId: number;
@@ -162,7 +166,7 @@ export const CyberSnake: React.FC<CyberSnakeProps> = ({ onExit }) => {
           gameOverRef.current = true;
           setGameOver(true);
           sound.playExplosion();
-          const isHigh = recordScore(scoreRef.current);
+          const isHigh = recordScoreRef.current(scoreRef.current);
           if (isHigh) setIsNewHigh(true);
         }
 
@@ -173,7 +177,7 @@ export const CyberSnake: React.FC<CyberSnakeProps> = ({ onExit }) => {
               gameOverRef.current = true;
               setGameOver(true);
               sound.playExplosion();
-              const isHigh = recordScore(scoreRef.current);
+              const isHigh = recordScoreRef.current(scoreRef.current);
               if (isHigh) setIsNewHigh(true);
               break;
             }
@@ -264,7 +268,7 @@ export const CyberSnake: React.FC<CyberSnakeProps> = ({ onExit }) => {
 
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
-  }, [spawnFood, recordScore]);
+  }, []); // <--- Clean empty dependency array: mounts once, never restarts loop on re-renders
 
   return (
     <div className="flex flex-col items-center max-w-md mx-auto w-full">
@@ -360,3 +364,5 @@ export const CyberSnake: React.FC<CyberSnakeProps> = ({ onExit }) => {
     </div>
   );
 };
+
+export const CyberSnake = memo(CyberSnakeComponent);
