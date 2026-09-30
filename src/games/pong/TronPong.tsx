@@ -2,8 +2,8 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { sound } from '../../audio/NeonAudioSynth';
 import { useHighScore } from '../../hooks/useHighScore';
-import type { PongBall, Paddle, PongParticle } from './types';
-import { RotateCcw, ArrowLeft, Trophy } from 'lucide-react';
+import type { PongBall, Paddle, PongParticle, PongDifficulty, PongDifficultyConfig } from './types';
+import { RotateCcw, ArrowLeft, Trophy, Sliders, Shield } from 'lucide-react';
 
 interface TronPongProps {
   onExit: () => void;
@@ -16,15 +16,42 @@ const PADDLE_HEIGHT = 70;
 const BALL_RADIUS = 6;
 const WINNING_SCORE = 7;
 
+const DIFFICULTY_CONFIGS: Record<PongDifficulty, PongDifficultyConfig> = {
+  EASY: {
+    aiSpeed: 3.4,
+    aiDeadzone: 24,
+    initialBallSpeed: 4.2,
+    maxBallSpeed: 9.0,
+    label: 'NOVICE',
+    description: 'Sub-routine latency enabled. Forgiving defense.',
+  },
+  MEDIUM: {
+    aiSpeed: 4.8,
+    aiDeadzone: 10,
+    initialBallSpeed: 5.5,
+    maxBallSpeed: 13.0,
+    label: 'TACTICAL',
+    description: 'Standard security algorithm. Balanced reflexes.',
+  },
+  HARD: {
+    aiSpeed: 6.2,
+    aiDeadzone: 2,
+    initialBallSpeed: 6.8,
+    maxBallSpeed: 16.0,
+    label: 'CYBERGRID',
+    description: 'Maximum clock frequency. Zero mercy protocol.',
+  },
+};
+
 const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { highScore, recordScore } = useHighScore('pong');
 
+  const [difficulty, setDifficulty] = useState<PongDifficulty | null>(null);
   const [playerScore, setPlayerScore] = useState(0);
   const [aiScore, setAiScore] = useState(0);
   const [winner, setWinner] = useState<'PLAYER' | 'AI' | null>(null);
 
-  // Synchronous refs for 60fps canvas loop
   const ballRef = useRef<PongBall>({
     x: WIDTH / 2,
     y: HEIGHT / 2,
@@ -58,6 +85,8 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
   const recordScoreRef = useRef(recordScore);
   recordScoreRef.current = recordScore;
 
+  const currentDiffRef = useRef<PongDifficultyConfig>(DIFFICULTY_CONFIGS.MEDIUM);
+
   const spawnParticles = (x: number, y: number, color: string) => {
     for (let i = 0; i < 12; i++) {
       const angle = Math.random() * Math.PI * 2;
@@ -74,17 +103,25 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
   };
 
   const resetBall = useCallback((towardPlayer: boolean) => {
-    const angle = (Math.random() * Math.PI) / 3 - Math.PI / 6; // -30 to +30 deg
-    const baseSpeed = 5.5;
+    const config = currentDiffRef.current;
+    const angle = (Math.random() * Math.PI) / 3 - Math.PI / 6;
     ballRef.current = {
       x: WIDTH / 2,
       y: HEIGHT / 2,
-      vx: (towardPlayer ? -1 : 1) * baseSpeed * Math.cos(angle),
-      vy: baseSpeed * Math.sin(angle),
+      vx: (towardPlayer ? -1 : 1) * config.initialBallSpeed * Math.cos(angle),
+      vy: config.initialBallSpeed * Math.sin(angle),
       radius: BALL_RADIUS,
-      speed: baseSpeed,
+      speed: config.initialBallSpeed,
     };
   }, []);
+
+  const startWithDifficulty = (selected: PongDifficulty) => {
+    sound.playBlip(750);
+    currentDiffRef.current = DIFFICULTY_CONFIGS[selected];
+    aiRef.current.speed = DIFFICULTY_CONFIGS[selected].aiSpeed;
+    setDifficulty(selected);
+    resetMatch();
+  };
 
   const resetMatch = useCallback(() => {
     playerScoreRef.current = 0;
@@ -97,7 +134,6 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
     playerRef.current.y = HEIGHT / 2 - PADDLE_HEIGHT / 2;
     aiRef.current.y = HEIGHT / 2 - PADDLE_HEIGHT / 2;
     resetBall(Math.random() > 0.5);
-    sound.playBlip(550);
   }, [resetBall]);
 
   // Key listeners
@@ -112,6 +148,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
         keysRef.current.down = true;
       }
       if ((e.key === 'r' || e.key === 'R') && winnerRef.current) {
+        sound.playBlip(600);
         resetMatch();
       }
     };
@@ -133,11 +170,11 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
     };
   }, [resetMatch]);
 
-  // Canvas render & physics loop
+  // Main Canvas & Game Loop
   useEffect(() => {
-    resetBall(false);
-    let animId: number;
+    if (!difficulty) return; // Don't run game physics until difficulty is picked
 
+    let animId: number;
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -148,6 +185,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
         const ball = ballRef.current;
         const player = playerRef.current;
         const ai = aiRef.current;
+        const config = currentDiffRef.current;
 
         // 1. Move Player
         if (keysRef.current.up && player.y > 0) {
@@ -157,10 +195,10 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
           player.y += player.speed;
         }
 
-        // 2. Reactive AI Tracking
+        // 2. Configurable AI Tracking
         const aiTarget = ball.y - ai.height / 2;
         const aiDiff = aiTarget - ai.y;
-        if (Math.abs(aiDiff) > 8) {
+        if (Math.abs(aiDiff) > config.aiDeadzone) {
           ai.y += Math.sign(aiDiff) * ai.speed;
         }
         ai.y = Math.max(0, Math.min(HEIGHT - ai.height, ai.y));
@@ -191,9 +229,9 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
           ball.vx < 0
         ) {
           const impact = (ball.y - (player.y + player.height / 2)) / (player.height / 2);
-          const maxAngle = (Math.PI / 4) * 1.1; // ~50 degrees
+          const maxAngle = (Math.PI / 4) * 1.1;
           const angle = impact * maxAngle;
-          ball.speed = Math.min(13, ball.speed + 0.35);
+          ball.speed = Math.min(config.maxBallSpeed, ball.speed + 0.35);
           ball.vx = Math.abs(ball.speed * Math.cos(angle));
           ball.vy = ball.speed * Math.sin(angle);
           sound.playBlip(620, 'triangle', 0.06);
@@ -211,7 +249,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
           const impact = (ball.y - (ai.y + ai.height / 2)) / (ai.height / 2);
           const maxAngle = (Math.PI / 4) * 1.1;
           const angle = impact * maxAngle;
-          ball.speed = Math.min(13, ball.speed + 0.35);
+          ball.speed = Math.min(config.maxBallSpeed, ball.speed + 0.35);
           ball.vx = -Math.abs(ball.speed * Math.cos(angle));
           ball.vy = ball.speed * Math.sin(angle);
           sound.playBlip(520, 'triangle', 0.06);
@@ -220,7 +258,6 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
 
         // Scoring Checks
         if (ball.x + ball.radius < 0) {
-          // AI Point
           aiScoreRef.current += 1;
           setAiScore(aiScoreRef.current);
           sound.playExplosion();
@@ -233,7 +270,6 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
             resetBall(false);
           }
         } else if (ball.x - ball.radius > WIDTH) {
-          // Player Point
           playerScoreRef.current += 1;
           setPlayerScore(playerScoreRef.current);
           sound.playChime();
@@ -249,7 +285,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
         }
       }
 
-      // 4. Render Canvas Frame
+      // 4. Render Frame
       ctx.fillStyle = '#04060d';
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
@@ -309,21 +345,91 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
 
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
-  }, [resetBall]);
+  }, [difficulty, resetBall]);
 
-  return (
-    <div className="flex flex-col items-center max-w-2xl mx-auto w-full">
-      {/* Top HUD */}
-      <div className="flex items-center justify-between w-full mb-3 px-1">
+  // Render Difficulty Selector Dialog if no difficulty chosen yet
+  if (!difficulty) {
+    return (
+      <div className="flex flex-col items-center max-w-lg mx-auto w-full p-6 bg-[#080d1a]/90 border border-cyan-500/40 backdrop-blur-md shadow-[0_0_30px_rgba(0,243,255,0.2)]">
+        <div className="flex items-center gap-2 mb-2 text-cyan-400 font-arcade text-xs">
+          <Shield className="w-4 h-4" /> THREAT_LEVEL_SELECTION
+        </div>
+        <h2 className="font-cyber font-bold text-2xl text-white tracking-wider glow-cyan mb-2">
+          SELECT DIFFICULTY
+        </h2>
+        <p className="font-mono text-xs text-gray-400 text-center mb-6">
+          Adjust the AI subroutine clock cycle and maximum deflection velocity.
+        </p>
+
+        <div className="flex flex-col gap-3 w-full mb-6">
+          {(['EASY', 'MEDIUM', 'HARD'] as PongDifficulty[]).map((level) => {
+            const cfg = DIFFICULTY_CONFIGS[level];
+            const colorClass =
+              level === 'EASY'
+                ? 'border-emerald-500/40 hover:border-emerald-400 text-emerald-400 hover:bg-emerald-950/30'
+                : level === 'MEDIUM'
+                ? 'border-cyan-500/40 hover:border-cyan-400 text-cyan-400 hover:bg-cyan-950/30'
+                : 'border-pink-500/40 hover:border-pink-400 text-pink-400 hover:bg-pink-950/30';
+
+            return (
+              <button
+                key={level}
+                onClick={() => startWithDifficulty(level)}
+                className={`p-4 border text-left transition-all cursor-pointer group ${colorClass}`}
+              >
+                <div className="flex justify-between items-center mb-1">
+                  <span className="font-arcade text-sm font-bold tracking-wider">{cfg.label}</span>
+                  <span className="font-mono text-[10px] text-gray-400">
+                    SPEED {cfg.initialBallSpeed} - {cfg.maxBallSpeed}
+                  </span>
+                </div>
+                <div className="font-mono text-xs text-gray-400 group-hover:text-gray-200">
+                  {cfg.description}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
         <button
           onClick={() => {
             sound.playBlip(300);
             onExit();
           }}
-          className="flex items-center gap-1.5 px-3 py-1 border border-pink-500/50 hover:bg-pink-500/20 text-xs font-arcade text-[#ff007f] cursor-pointer"
+          className="flex items-center gap-1.5 px-4 py-2 border border-gray-700 hover:border-pink-500/60 text-xs font-arcade text-gray-400 hover:text-pink-400 cursor-pointer transition-all"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> DECK
+          <ArrowLeft className="w-3.5 h-3.5" /> CANCEL TO DECK
         </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center max-w-2xl mx-auto w-full">
+      {/* Top HUD */}
+      <div className="flex items-center justify-between w-full mb-3 px-1">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              sound.playBlip(300);
+              onExit();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1 border border-pink-500/50 hover:bg-pink-500/20 text-xs font-arcade text-[#ff007f] cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> DECK
+          </button>
+
+          <button
+            onClick={() => {
+              sound.playBlip(400);
+              setDifficulty(null);
+            }}
+            className="flex items-center gap-1 px-2.5 py-1 border border-cyan-500/40 hover:bg-cyan-500/20 text-[10px] font-arcade text-cyan-300 cursor-pointer"
+            title="Change Difficulty"
+          >
+            <Sliders className="w-3 h-3" /> {difficulty}
+          </button>
+        </div>
 
         <div className="flex items-center gap-8">
           <div className="flex items-center gap-1.5 text-xs font-arcade text-yellow-400">
@@ -363,18 +469,33 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
             <p className="font-arcade text-xs text-gray-400 mb-6">
               FINAL SCORE: {playerScore} - {aiScore}
             </p>
-            <button
-              onClick={resetMatch}
-              className="flex items-center gap-2 px-4 py-2 border border-cyan-400 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-400 hover:text-black font-arcade text-xs transition-all cursor-pointer shadow-[0_0_15px_rgba(0,243,255,0.4)]"
-            >
-              <RotateCcw className="w-4 h-4" /> PLAY AGAIN [R]
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  sound.playBlip(600);
+                  resetMatch();
+                }}
+                className="flex items-center gap-2 px-4 py-2 border border-cyan-400 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-400 hover:text-black font-arcade text-xs transition-all cursor-pointer shadow-[0_0_15px_rgba(0,243,255,0.4)]"
+              >
+                <RotateCcw className="w-4 h-4" /> PLAY AGAIN [R]
+              </button>
+
+              <button
+                onClick={() => {
+                  sound.playBlip(400);
+                  setDifficulty(null);
+                }}
+                className="px-4 py-2 border border-pink-500/60 hover:bg-pink-500/20 text-pink-400 font-arcade text-xs transition-all cursor-pointer"
+              >
+                DIFFICULTY
+              </button>
+            </div>
           </div>
         )}
       </div>
 
       <div className="mt-4 text-[10px] font-mono text-gray-500">
-        DEFLECTION CONTROLS: [W / S] OR [UP / DOWN] // RESTART: [R]
+        CONTROLS: [W / S] OR [UP / DOWN] // RESTART: [R]
       </div>
     </div>
   );
