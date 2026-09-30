@@ -12,6 +12,7 @@ import { useHighScore } from './hooks/useHighScore';
 import { CyberSnake } from './games/snake';
 import { TronPong } from './games/pong';
 import { NeonTetris } from './games/tetris';
+import { VectorBreakout } from './games/breakout';
 
 const ARCADE_GAMES: GameMetadata[] = [
   {
@@ -69,6 +70,7 @@ export default function App() {
   const { highScore: snakeHighScore } = useHighScore('snake');
   const { highScore: pongHighScore } = useHighScore('pong');
   const { highScore: tetrisHighScore } = useHighScore('tetris');
+  const { highScore: breakoutHighScore } = useHighScore('breakout');
 
   const toggleSound = () => {
     const nextState = !soundActive;
@@ -156,6 +158,8 @@ export default function App() {
                     ? pongHighScore
                     : game.id === 'tetris'
                     ? tetrisHighScore
+                    : game.id === 'breakout'
+                    ? breakoutHighScore
                     : 0
                 }
                   onSelect={handleSelectGame}
@@ -169,6 +173,8 @@ export default function App() {
           <TronPong onExit={() => setActiveGame(null)} />
         ) : activeGame === 'tetris' ? (
           <NeonTetris onExit={() => setActiveGame(null)} />
+        ) : activeGame === 'breakout' ? (
+          <VectorBreakout onExit={() => setActiveGame(null)} />
         ) : (
           <div className="border border-cyan-500/40 p-12 bg-black/70 backdrop-blur-md text-center font-arcade max-w-lg">
             <ShieldAlert className="w-12 h-12 text-yellow-400 mx-auto mb-4 animate-bounce" />
