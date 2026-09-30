@@ -37,29 +37,39 @@ const CyberSnakeComponent: React.FC<CyberSnakeProps> = ({ onExit }) => {
 
   // Touch swipe handler inside CyberSnake.tsx
   const touchStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const touchActiveRef = useRef<boolean>(false);
 
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     const touch = e.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+    touchActiveRef.current = true;
   };
 
-  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    const touch = e.changedTouches[0];
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (!touchActiveRef.current) return;
+
+    const touch = e.touches[0];
     const dx = touch.clientX - touchStartRef.current.x;
     const dy = touch.clientY - touchStartRef.current.y;
-    const minSwipe = 25; // minimum travel distance
+    const minSwipeDistance = 15; // Low threshold for snappy, immediate response
 
-    if (Math.abs(dx) > Math.abs(dy)) {
-      if (Math.abs(dx) > minSwipe) {
+    // Check if finger moved past the threshold
+    if (Math.abs(dx) > minSwipeDistance || Math.abs(dy) > minSwipeDistance) {
+      if (Math.abs(dx) > Math.abs(dy)) {
         changeDirection(dx > 0 ? 'RIGHT' : 'LEFT');
-      }
-    } else {
-      if (Math.abs(dy) > minSwipe) {
+      } else {
         changeDirection(dy > 0 ? 'DOWN' : 'UP');
       }
+
+      // Reset touch origin so subsequent drags in the same gesture register new turns
+      touchStartRef.current = { x: touch.clientX, y: touch.clientY };
     }
   };
-  
+
+  const handleTouchEnd = () => {
+    touchActiveRef.current = false;
+  };
+
 
   // Keep a stable ref to recordScore so the canvas loop doesn't re-mount
   const recordScoreRef = useRef(recordScore);
@@ -328,7 +338,9 @@ const CyberSnakeComponent: React.FC<CyberSnakeProps> = ({ onExit }) => {
           width={GRID_SIZE * CELL_SIZE}
           height={GRID_SIZE * CELL_SIZE}
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
           className="w-full h-full object-contain block touch-control"
         />
 
@@ -360,27 +372,39 @@ const CyberSnakeComponent: React.FC<CyberSnakeProps> = ({ onExit }) => {
       <div className="grid grid-cols-3 gap-2 mt-6 w-44 md:hidden">
         <div />
         <button
-          onClick={() => changeDirection('UP')}
-          className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs active:bg-cyan-400 active:text-black"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            changeDirection('UP');
+          }}
+          className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs active:bg-cyan-400 active:text-black touch-control"
         >
           ▲
         </button>
         <div />
         <button
-          onClick={() => changeDirection('LEFT')}
-          className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs active:bg-cyan-400 active:text-black"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            changeDirection('LEFT');
+          }}
+          className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs active:bg-cyan-400 active:text-black touch-control"
         >
           ◀
         </button>
         <button
-          onClick={() => changeDirection('DOWN')}
-          className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs active:bg-cyan-400 active:text-black"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            changeDirection('DOWN');
+          }}
+          className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs active:bg-cyan-400 active:text-black touch-control"
         >
           ▼
         </button>
         <button
-          onClick={() => changeDirection('RIGHT')}
-          className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs active:bg-cyan-400 active:text-black"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            changeDirection('RIGHT');
+          }}
+          className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs active:bg-cyan-400 active:text-black touch-control"
         >
           ▶
         </button>

@@ -15,12 +15,6 @@
   --color-dark-bg: #04060d;
 }
 
-html, body {
-  overscroll-behavior: none;
-  -webkit-overflow-scrolling: touch;
-  touch-action: manipulation;
-}
-
 body {
   background-color: var(--color-dark-bg);
   color: #e0f7fa;
@@ -71,9 +65,19 @@ body {
   opacity: 0.85;
 }
 
+/* ==========================================
+   MOBILE VIEWPORT & TOUCH GESTURE ISOLATION
+   ========================================== */
+html, body {
+  overscroll-behavior: none;
+  overscroll-behavior-y: none;
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: touch;
+}
+
 /* Apply to interactive game areas and buttons to stop pinch/zoom & text selection */
 .touch-control {
-  touch-action: none;
+  touch-action: none !important;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
   user-select: none;
