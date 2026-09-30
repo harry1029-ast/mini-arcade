@@ -35,6 +35,32 @@ const CyberSnakeComponent: React.FC<CyberSnakeProps> = ({ onExit }) => {
   const scoreRef = useRef<number>(0);
   const gameOverRef = useRef<boolean>(false);
 
+  // Touch swipe handler inside CyberSnake.tsx
+  const touchStartRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+
+  const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const touch = e.touches[0];
+    touchStartRef.current = { x: touch.clientX, y: touch.clientY };
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchStartRef.current.x;
+    const dy = touch.clientY - touchStartRef.current.y;
+    const minSwipe = 25; // minimum travel distance
+
+    if (Math.abs(dx) > Math.abs(dy)) {
+      if (Math.abs(dx) > minSwipe) {
+        changeDirection(dx > 0 ? 'RIGHT' : 'LEFT');
+      }
+    } else {
+      if (Math.abs(dy) > minSwipe) {
+        changeDirection(dy > 0 ? 'DOWN' : 'UP');
+      }
+    }
+  };
+  
+
   // Keep a stable ref to recordScore so the canvas loop doesn't re-mount
   const recordScoreRef = useRef(recordScore);
   recordScoreRef.current = recordScore;
@@ -296,12 +322,14 @@ const CyberSnakeComponent: React.FC<CyberSnakeProps> = ({ onExit }) => {
       </div>
 
       {/* Screen Frame & Canvas */}
-      <div className="relative border-2 border-cyan-400/80 p-1 bg-black shadow-[0_0_20px_rgba(0,243,255,0.3)]">
+      <div className="relative w-full max-w-[400px] aspect-square border-2 border-cyan-400/80 p-1 bg-black shadow-[0_0_20px_rgba(0,243,255,0.3)]">
         <canvas
           ref={canvasRef}
           width={GRID_SIZE * CELL_SIZE}
           height={GRID_SIZE * CELL_SIZE}
-          className="block"
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          className="w-full h-full object-contain block touch-control"
         />
 
         {/* Game Over Modal Screen */}

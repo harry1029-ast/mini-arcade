@@ -15,6 +15,12 @@
   --color-dark-bg: #04060d;
 }
 
+html, body {
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+  touch-action: manipulation;
+}
+
 body {
   background-color: var(--color-dark-bg);
   color: #e0f7fa;
@@ -63,4 +69,12 @@ body {
               linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
   background-size: 100% 3px, 6px 100%;
   opacity: 0.85;
+}
+
+/* Apply to interactive game areas and buttons to stop pinch/zoom & text selection */
+.touch-control {
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
