@@ -2,7 +2,7 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { sound } from '../../audio/NeonAudioSynth';
 import { useHighScore } from '../../hooks/useHighScore';
-import type { SlimeEntity, SlimeBall, SlimeParticle } from './types';
+import type { SlimeEntity, SlimeBall, SlimeParticle, AiServeTactic } from './types';
 import { RotateCcw, ArrowLeft, Trophy } from 'lucide-react';
 
 interface CyberSlimeProps {
@@ -21,6 +21,10 @@ const JUMP_POWER = -9.2;
 const MOVE_SPEED = 4.8;
 const WINNING_SCORE = 6;
 
+// Anchors calibrated with comfortable vertical clearance (y = 215)
+const PLAYER_SERVE_POS = { x: 130, y: 215 };
+const AI_SERVE_POS = { x: WIDTH - 130, y: 215 };
+
 const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { highScore, recordScore } = useHighScore('slime');
@@ -28,36 +32,41 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
   const [playerScore, setPlayerScore] = useState(0);
   const [aiScore, setAiScore] = useState(0);
   const [winner, setWinner] = useState<'PLAYER' | 'AI' | null>(null);
+  const [isPlayerServing, setIsPlayerServing] = useState(true);
 
-  // Synchronous refs for canvas loop
+  const aiServeTacticRef = useRef<AiServeTactic>('FAST_SPIKE');
+  const aiServeDelayRef = useRef<number>(45);
+
   const playerRef = useRef<SlimeEntity>({
-    x: 140,
+    x: 90,
     y: GROUND_Y,
     vx: 0,
     vy: 0,
     radius: SLIME_RADIUS,
-    color: '#bc13fe', // Neon Purple
+    color: '#bc13fe',
     glow: '#bc13fe',
     isJumping: false,
   });
 
   const aiRef = useRef<SlimeEntity>({
-    x: WIDTH - 140,
+    x: WIDTH - 80,
     y: GROUND_Y,
     vx: 0,
     vy: 0,
     radius: SLIME_RADIUS,
-    color: '#00f3ff', // Neon Cyan
+    color: '#00f3ff',
     glow: '#00f3ff',
     isJumping: false,
   });
 
   const ballRef = useRef<SlimeBall>({
-    x: 140,
-    y: 120,
+    x: PLAYER_SERVE_POS.x,
+    y: PLAYER_SERVE_POS.y,
     vx: 0,
     vy: 0,
     radius: BALL_RADIUS,
+    isServing: true,
+    server: 'PLAYER',
   });
 
   const particlesRef = useRef<SlimeParticle[]>([]);
@@ -67,6 +76,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     jump: false,
   });
 
+  const aiServeTicksRef = useRef<number>(0);
   const playerScoreRef = useRef(0);
   const aiScoreRef = useRef(0);
   const winnerRef = useRef<'PLAYER' | 'AI' | null>(null);
@@ -88,26 +98,50 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     }
   };
 
-  const serveBall = useCallback((towardPlayer: boolean) => {
-    ballRef.current = {
-      x: towardPlayer ? 140 : WIDTH - 140,
-      y: 130,
-      vx: towardPlayer ? 1.5 : -1.5,
-      vy: -2,
-      radius: BALL_RADIUS,
-    };
-    playerRef.current.x = 140;
+  const stageServe = useCallback((servingPlayer: boolean) => {
+    aiServeTicksRef.current = 0;
+
+    // Reset initial court positions
+    playerRef.current.x = 90;
     playerRef.current.y = GROUND_Y;
     playerRef.current.vx = 0;
     playerRef.current.vy = 0;
     playerRef.current.isJumping = false;
 
-    aiRef.current.x = WIDTH - 140;
+    aiRef.current.x = WIDTH - 80;
     aiRef.current.y = GROUND_Y;
     aiRef.current.vx = 0;
     aiRef.current.vy = 0;
     aiRef.current.isJumping = false;
-  }, []);
+
+    const targetPos = servingPlayer ? PLAYER_SERVE_POS : AI_SERVE_POS;
+    ballRef.current = {
+      x: targetPos.x,
+      y: targetPos.y,
+      vx: 0,
+      vy: 0,
+      radius: BALL_RADIUS,
+      isServing: true,
+      server: servingPlayer ? 'PLAYER' : 'AI',
+    };
+
+    setIsPlayerServing(servingPlayer);
+
+    // Pick random AI serve style
+    if (!servingPlayer) {
+        const roll = Math.random();
+        if (roll < 0.4) {
+        aiServeTacticRef.current = 'FAST_SPIKE';
+        aiServeDelayRef.current = 35 + Math.floor(Math.random() * 15); // Quick trigger
+        } else if (roll < 0.75) {
+        aiServeTacticRef.current = 'HIGH_LOB';
+        aiServeDelayRef.current = 45 + Math.floor(Math.random() * 20); // Medium pause
+        } else {
+        aiServeTacticRef.current = 'SHORT_DROP';
+        aiServeDelayRef.current = 65 + Math.floor(Math.random() * 25); // Delayed trick serve
+        }
+    }
+    }, []);
 
   const resetMatch = useCallback(() => {
     playerScoreRef.current = 0;
@@ -117,9 +151,9 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     setAiScore(0);
     setWinner(null);
     particlesRef.current = [];
-    serveBall(true);
+    stageServe(true);
     sound.playBlip(550);
-  }, [serveBall]);
+  }, [stageServe]);
 
   // Key listeners
   useEffect(() => {
@@ -161,9 +195,9 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     };
   }, [resetMatch]);
 
-  // 60FPS Canvas Render & Physics Loop
+  // Main Canvas Render & Physics Loop
   useEffect(() => {
-    serveBall(true);
+    stageServe(true);
     let animId: number;
 
     const canvas = canvasRef.current;
@@ -193,7 +227,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
         player.x += player.vx;
         player.y += player.vy;
 
-        // Player bounds (Left court + Net constraint)
+        // Player boundary constraints
         if (player.x - player.radius < 0) player.x = player.radius;
         if (player.x + player.radius > netX - NET_WIDTH / 2) {
           player.x = netX - NET_WIDTH / 2 - player.radius;
@@ -204,33 +238,79 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
           player.isJumping = false;
         }
 
-        // 2. Reactive AI Logic
-        const aiTarget = ball.x > netX ? ball.x : WIDTH - 120;
-        const distToBall = aiTarget - ai.x;
-        if (Math.abs(distToBall) > 10) {
-          ai.vx = Math.sign(distToBall) * (MOVE_SPEED * 0.88);
-        } else {
-          ai.vx = 0;
-        }
+        // 2. AI Routine: Dynamic Serve Execution vs. Active Rally
+        if (ball.isServing) {
+          if (ball.server === 'AI') {
+            aiServeTicksRef.current += 1;
 
-        // AI Jump trigger when ball is nearby on AI side
-        if (
-          ball.x > netX &&
-          ball.x > ai.x - 30 &&
-          ball.x < ai.x + 30 &&
-          ball.y < GROUND_Y - 40 &&
-          ball.vy > 0 &&
-          !ai.isJumping
-        ) {
-          ai.vy = JUMP_POWER;
-          ai.isJumping = true;
+            if (aiServeTicksRef.current > aiServeDelayRef.current) {
+              // Calculate target strike offset depending on the selected tactic
+              let targetOffsetX = 14; // Default shoulder
+              let runSpeed = MOVE_SPEED * 0.8;
+
+              if (aiServeTacticRef.current === 'FAST_SPIKE') {
+                targetOffsetX = 20; // Hit with front edge for steep angle
+                runSpeed = MOVE_SPEED * 0.95;
+              } else if (aiServeTacticRef.current === 'HIGH_LOB') {
+                targetOffsetX = 3;  // Hit almost dead-center for high vertical arc
+                runSpeed = MOVE_SPEED * 0.65;
+              } else if (aiServeTacticRef.current === 'SHORT_DROP') {
+                targetOffsetX = -6; // Hit rear curve for slower drop
+                runSpeed = MOVE_SPEED * 0.55;
+              }
+
+              const targetX = AI_SERVE_POS.x + targetOffsetX;
+              const diffX = targetX - ai.x;
+
+              if (Math.abs(diffX) > 4) {
+                ai.vx = Math.sign(diffX) * runSpeed;
+              } else {
+                ai.vx = 0;
+                if (!ai.isJumping && ai.y >= GROUND_Y) {
+                  // Adjust jump power based on tactic
+                  ai.vy = aiServeTacticRef.current === 'SHORT_DROP' ? JUMP_POWER * 0.88 : JUMP_POWER;
+                  ai.isJumping = true;
+                }
+              }
+            } else {
+              ai.vx = 0;
+            }
+          } else {
+            // Player is serving: AI stays in defensive stance
+            const readyX = WIDTH - 120;
+            const diffX = readyX - ai.x;
+            if (Math.abs(diffX) > 8) ai.vx = Math.sign(diffX) * (MOVE_SPEED * 0.6);
+            else ai.vx = 0;
+          }
+        } else {
+          // Standard Rally Tracking
+          const aiTarget = ball.x > netX ? ball.x : WIDTH - 120;
+          const distToBall = aiTarget - ai.x;
+          if (Math.abs(distToBall) > 10) {
+            ai.vx = Math.sign(distToBall) * (MOVE_SPEED * 0.88);
+          } else {
+            ai.vx = 0;
+          }
+
+          // Dynamic jump when ball is descending into AI reach
+          if (
+            ball.x > netX &&
+            ball.x > ai.x - 35 &&
+            ball.x < ai.x + 35 &&
+            ball.y < GROUND_Y - 45 &&
+            ball.vy > 0 &&
+            !ai.isJumping
+          ) {
+            ai.vy = JUMP_POWER;
+            ai.isJumping = true;
+          }
         }
 
         ai.vy += GRAVITY;
         ai.x += ai.vx;
         ai.y += ai.vy;
 
-        // AI Bounds (Right court + Net constraint)
+        // AI boundary constraints
         if (ai.x - ai.radius < netX + NET_WIDTH / 2) {
           ai.x = netX + NET_WIDTH / 2 + ai.radius;
         }
@@ -241,112 +321,134 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
           ai.isJumping = false;
         }
 
-        // 3. Move Ball with Gravity
-        ball.vy += GRAVITY * 0.65;
-        ball.x += ball.vx;
-        ball.y += ball.vy;
+        // 3. Move Ball
+        if (ball.isServing) {
+          const anchor = ball.server === 'PLAYER' ? PLAYER_SERVE_POS : AI_SERVE_POS;
+          ball.x = anchor.x;
+          ball.y = anchor.y + Math.sin(Date.now() / 160) * 3;
 
-        // Outer wall bounces
-        if (ball.x - ball.radius <= 0) {
-          ball.x = ball.radius;
-          ball.vx = -ball.vx * 0.85;
-          sound.playBounce();
-          spawnParticles(ball.x, ball.y, '#00f3ff', 5);
-        } else if (ball.x + ball.radius >= WIDTH) {
-          ball.x = WIDTH - ball.radius;
-          ball.vx = -ball.vx * 0.85;
-          sound.playBounce();
-          spawnParticles(ball.x, ball.y, '#00f3ff', 5);
-        }
-
-        // Net Collision
-        const netTop = GROUND_Y - NET_HEIGHT;
-        if (
-          ball.x + ball.radius >= netX - NET_WIDTH / 2 &&
-          ball.x - ball.radius <= netX + NET_WIDTH / 2 &&
-          ball.y + ball.radius >= netTop
-        ) {
-          if (ball.y < netTop + 5) {
-            // Bounce on top of post
-            ball.y = netTop - ball.radius;
-            ball.vy = -Math.abs(ball.vy) * 0.85;
-          } else {
-            // Bounce off sides of post
-            ball.vx = -ball.vx * 0.85;
-            if (ball.x < netX) ball.x = netX - NET_WIDTH / 2 - ball.radius;
-            else ball.x = netX + NET_WIDTH / 2 + ball.radius;
-          }
-          sound.playBounce();
-          spawnParticles(ball.x, ball.y, '#ffff00', 6);
-        }
-
-        // Hemisphere Slime Collisions (Normal Calculation)
-        const checkSlimeBounce = (slime: SlimeEntity, isPlayerSlime: boolean) => {
-          const dx = ball.x - slime.x;
-          const dy = ball.y - slime.y;
+          // Check if server slime strikes the floating ball
+          const serverSlime = ball.server === 'PLAYER' ? player : ai;
+          const dx = ball.x - serverSlime.x;
+          const dy = ball.y - serverSlime.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
-          // Collision occurs if within radius and ball is above the flat bottom
-          if (dist < slime.radius + ball.radius && ball.y <= slime.y) {
+          if (dist < serverSlime.radius + ball.radius && ball.y <= serverSlime.y) {
+            ball.isServing = false;
+            setIsPlayerServing(false);
+
             const nx = dx / (dist || 1);
             const ny = dy / (dist || 1);
+            ball.x = serverSlime.x + nx * (serverSlime.radius + ball.radius);
+            ball.y = serverSlime.y + ny * (serverSlime.radius + ball.radius);
 
-            // Position correction
-            ball.x = slime.x + nx * (slime.radius + ball.radius);
-            ball.y = slime.y + ny * (slime.radius + ball.radius);
+            const baseSpeed = 8.5;
+            ball.vx = nx * baseSpeed + serverSlime.vx * 0.45;
+            ball.vy = ny * baseSpeed + serverSlime.vy * 0.45;
+            if (ball.vy > -4) ball.vy = -6.5;
 
-            // Reflection blended with slime movement
-            const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
-            const bounceSpeed = Math.min(11, Math.max(7, speed * 1.05));
-
-            ball.vx = nx * bounceSpeed + slime.vx * 0.35;
-            ball.vy = ny * bounceSpeed + slime.vy * 0.35;
-
-            // Ensure ball bounces upward
-            if (ball.vy > -3) ball.vy = -6;
-
-            sound.playBlip(isPlayerSlime ? 650 : 520, 'sine', 0.07);
-            spawnParticles(ball.x, ball.y, slime.color, 8);
+            sound.playBlip(ball.server === 'PLAYER' ? 680 : 520, 'sine', 0.08);
+            spawnParticles(ball.x, ball.y, serverSlime.color, 12);
           }
-        };
+        } else {
+          ball.vy += GRAVITY * 0.65;
+          ball.x += ball.vx;
+          ball.y += ball.vy;
 
-        checkSlimeBounce(player, true);
-        checkSlimeBounce(ai, false);
+          // Outer wall bounces
+          if (ball.x - ball.radius <= 0) {
+            ball.x = ball.radius;
+            ball.vx = -ball.vx * 0.85;
+            sound.playBounce();
+            spawnParticles(ball.x, ball.y, '#00f3ff', 5);
+          } else if (ball.x + ball.radius >= WIDTH) {
+            ball.x = WIDTH - ball.radius;
+            ball.vx = -ball.vx * 0.85;
+            sound.playBounce();
+            spawnParticles(ball.x, ball.y, '#00f3ff', 5);
+          }
 
-        // Floor / Scoring Condition
-        if (ball.y + ball.radius >= GROUND_Y) {
-          sound.playExplosion();
-          spawnParticles(ball.x, GROUND_Y, '#ff007f', 16);
-
-          if (ball.x < netX) {
-            // Landed on player's side: AI Scores
-            aiScoreRef.current += 1;
-            setAiScore(aiScoreRef.current);
-
-            if (aiScoreRef.current >= WINNING_SCORE) {
-              winnerRef.current = 'AI';
-              setWinner('AI');
+          // Net Collision
+          const netTop = GROUND_Y - NET_HEIGHT;
+          if (
+            ball.x + ball.radius >= netX - NET_WIDTH / 2 &&
+            ball.x - ball.radius <= netX + NET_WIDTH / 2 &&
+            ball.y + ball.radius >= netTop
+          ) {
+            if (ball.y < netTop + 5) {
+              ball.y = netTop - ball.radius;
+              ball.vy = -Math.abs(ball.vy) * 0.85;
             } else {
-              serveBall(false);
+              ball.vx = -ball.vx * 0.85;
+              if (ball.x < netX) ball.x = netX - NET_WIDTH / 2 - ball.radius;
+              else ball.x = netX + NET_WIDTH / 2 + ball.radius;
             }
-          } else {
-            // Landed on AI's side: Player Scores
-            playerScoreRef.current += 1;
-            setPlayerScore(playerScoreRef.current);
-            sound.playChime();
-            recordScoreRef.current(playerScoreRef.current);
+            sound.playBounce();
+            spawnParticles(ball.x, ball.y, '#ffff00', 6);
+          }
 
-            if (playerScoreRef.current >= WINNING_SCORE) {
-              winnerRef.current = 'PLAYER';
-              setWinner('PLAYER');
+          // Hemisphere Slime Collisions
+          const checkSlimeBounce = (slime: SlimeEntity, isPlayerSlime: boolean) => {
+            const dx = ball.x - slime.x;
+            const dy = ball.y - slime.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < slime.radius + ball.radius && ball.y <= slime.y) {
+              const nx = dx / (dist || 1);
+              const ny = dy / (dist || 1);
+
+              ball.x = slime.x + nx * (slime.radius + ball.radius);
+              ball.y = slime.y + ny * (slime.radius + ball.radius);
+
+              const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
+              const bounceSpeed = Math.min(11.5, Math.max(7.5, speed * 1.05));
+
+              ball.vx = nx * bounceSpeed + slime.vx * 0.35;
+              ball.vy = ny * bounceSpeed + slime.vy * 0.35;
+
+              if (ball.vy > -3) ball.vy = -6;
+
+              sound.playBlip(isPlayerSlime ? 650 : 520, 'sine', 0.07);
+              spawnParticles(ball.x, ball.y, slime.color, 8);
+            }
+          };
+
+          checkSlimeBounce(player, true);
+          checkSlimeBounce(ai, false);
+
+          // Floor Scoring Trigger
+          if (ball.y + ball.radius >= GROUND_Y) {
+            sound.playExplosion();
+            spawnParticles(ball.x, GROUND_Y, '#ff007f', 16);
+
+            if (ball.x < netX) {
+              aiScoreRef.current += 1;
+              setAiScore(aiScoreRef.current);
+
+              if (aiScoreRef.current >= WINNING_SCORE) {
+                winnerRef.current = 'AI';
+                setWinner('AI');
+              } else {
+                stageServe(false);
+              }
             } else {
-              serveBall(true);
+              playerScoreRef.current += 1;
+              setPlayerScore(playerScoreRef.current);
+              sound.playChime();
+              recordScoreRef.current(playerScoreRef.current);
+
+              if (playerScoreRef.current >= WINNING_SCORE) {
+                winnerRef.current = 'PLAYER';
+                setWinner('PLAYER');
+              } else {
+                stageServe(true);
+              }
             }
           }
         }
       }
 
-      // 4. Render Frame
+      // 4. Render Canvas
       ctx.fillStyle = '#04060d';
       ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
@@ -366,14 +468,13 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       ctx.shadowBlur = 8;
       ctx.fillRect(WIDTH / 2 - NET_WIDTH / 2, GROUND_Y - NET_HEIGHT, NET_WIDTH, NET_HEIGHT);
 
-      // Function to render a slime with directional googly eye
+      // Draw Slimes
       const drawSlime = (slime: SlimeEntity, isAi: boolean) => {
         ctx.save();
         ctx.shadowBlur = 15;
         ctx.shadowColor = slime.glow;
         ctx.fillStyle = slime.color;
 
-        // Hemisphere body
         ctx.beginPath();
         ctx.arc(slime.x, slime.y, slime.radius, Math.PI, 0, false);
         ctx.closePath();
@@ -407,7 +508,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       drawSlime(playerRef.current, false);
       drawSlime(aiRef.current, true);
 
-      // Draw Volleyball (Neon Energy Orb)
+      // Draw Ball
       const b = ballRef.current;
       ctx.shadowBlur = 16;
       ctx.shadowColor = '#39ff14';
@@ -416,6 +517,15 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
+
+      // Draw Serve Guide Ring
+      if (b.isServing) {
+        ctx.strokeStyle = b.server === 'PLAYER' ? 'rgba(188, 19, 254, 0.5)' : 'rgba(0, 243, 255, 0.5)';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.radius + 6, 0, Math.PI * 2);
+        ctx.stroke();
+      }
 
       // Draw Particles
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
@@ -439,7 +549,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
 
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
-  }, [serveBall]);
+  }, [stageServe]);
 
   return (
     <div className="flex flex-col items-center max-w-2xl mx-auto w-full">
@@ -478,7 +588,16 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
           className="block w-full max-w-[640px] h-auto"
         />
 
-        {/* Win/Loss Modal Screen */}
+        {/* Player Serve Prompt */}
+        {isPlayerServing && !winner && (
+          <div className="absolute bottom-16 left-8 pointer-events-none">
+            <span className="font-arcade text-[10px] text-purple-300 tracking-wider animate-pulse bg-black/75 px-3 py-1.5 border border-purple-500/50 shadow-[0_0_10px_rgba(188,19,254,0.4)]">
+              LINE UP & LEAP TO SERVE
+            </span>
+          </div>
+        )}
+
+        {/* Win/Loss Modal */}
         {winner && (
           <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center backdrop-blur-xs">
             <p
@@ -529,7 +648,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       </div>
 
       <div className="mt-4 text-[10px] font-mono text-gray-500 hidden md:block">
-        MOVE: [A / D] OR [LEFT / RIGHT] // JUMP: [W / SPACE / UP] // REBOOT: [R]
+        POSITION: [A / D] OR [LEFT / RIGHT] // LEAP TO SERVE: [W / SPACE / UP]
       </div>
     </div>
   );

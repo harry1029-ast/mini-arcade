@@ -1,5 +1,7 @@
 // src/games/slime/types.ts
 
+export type AiServeTactic = 'FAST_SPIKE' | 'HIGH_LOB' | 'SHORT_DROP';
+
 export interface SlimeEntity {
   x: number;
   y: number;
@@ -17,6 +19,8 @@ export interface SlimeBall {
   vx: number;
   vy: number;
   radius: number;
+  isServing: boolean;
+  server: 'PLAYER' | 'AI';
 }
 
 export interface SlimeParticle {
