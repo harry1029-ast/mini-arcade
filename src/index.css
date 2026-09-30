@@ -2,45 +2,38 @@
 
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Press+Start+2P&family=Share+Tech+Mono&display=swap');
 
-:root {
-  --neon-cyan: #00f3ff;
-  --neon-pink: #ff007f;
-  --neon-green: #39ff14;
-  --neon-amber: #ffaa00;
-  --neon-purple: #bc13fe;
-  --dark-bg: #04060d;
+@theme {
+  --font-cyber: 'Orbitron', sans-serif;
+  --font-arcade: 'Press Start 2P', monospace;
+  --font-mono: 'Share Tech Mono', monospace;
+
+  --color-neon-cyan: #00f3ff;
+  --color-neon-pink: #ff007f;
+  --color-neon-green: #39ff14;
+  --color-neon-amber: #ffaa00;
+  --color-neon-purple: #bc13fe;
+  --color-dark-bg: #04060d;
 }
 
 body {
-  background-color: var(--dark-bg);
+  background-color: var(--color-dark-bg);
   color: #e0f7fa;
-  font-family: 'Share Tech Mono', monospace;
+  font-family: var(--font-mono);
   overflow-x: hidden;
   min-height: 100vh;
   margin: 0;
   user-select: none;
 }
 
-.font-arcade {
-  font-family: 'Press Start 2P', monospace;
-}
-
-.font-cyber {
-  font-family: 'Orbitron', sans-serif;
-}
-
-/* Neon text shadows */
+/* Neon Text Glows */
 .glow-cyan {
-  text-shadow: 0 0 5px var(--neon-cyan), 0 0 15px var(--neon-cyan), 0 0 30px rgba(0, 243, 255, 0.6);
+  text-shadow: 0 0 5px #00f3ff, 0 0 15px #00f3ff, 0 0 30px rgba(0, 243, 255, 0.6);
 }
 .glow-pink {
-  text-shadow: 0 0 5px var(--neon-pink), 0 0 15px var(--neon-pink), 0 0 30px rgba(255, 0, 127, 0.6);
-}
-.glow-green {
-  text-shadow: 0 0 5px var(--neon-green), 0 0 15px var(--neon-green), 0 0 25px rgba(57, 255, 20, 0.5);
+  text-shadow: 0 0 5px #ff007f, 0 0 15px #ff007f, 0 0 30px rgba(255, 0, 127, 0.6);
 }
 
-/* 3D scrolling grid plane */
+/* 3D Horizon Grid */
 .cyber-grid-plane {
   position: absolute;
   width: 200%;
@@ -60,7 +53,7 @@ body {
   100% { transform: perspective(400px) rotateX(72deg) translateY(50px); }
 }
 
-/* CRT scanlines */
+/* CRT Scanline Filter */
 .crt-overlay {
   position: fixed;
   inset: 0;
