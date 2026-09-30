@@ -6,6 +6,10 @@ import { CyberBackground } from './components/layout/CyberBackground';
 import { CRTOverlay } from './components/ui/CRTOverlay';
 import { GameCard } from './components/ui/GameCard';
 import type { GameId, GameMetadata } from './types/arcade';
+import { useHighScore } from './hooks/useHighScore';
+
+
+import { CyberSnake } from './games/snake';
 
 const ARCADE_GAMES: GameMetadata[] = [
   {
@@ -59,6 +63,7 @@ export default function App() {
   const [activeGame, setActiveGame] = useState<GameId | null>(null);
   const [crtActive, setCrtActive] = useState<boolean>(true);
   const [soundActive, setSoundActive] = useState<boolean>(true);
+  const { highScore: snakeHighScore } = useHighScore('snake');
 
   const toggleSound = () => {
     const nextState = !soundActive;
@@ -139,12 +144,14 @@ export default function App() {
                 <GameCard
                   key={game.id}
                   game={game}
-                  highScore={0}
+                  highScore={game.id === 'snake' ? snakeHighScore : 0}
                   onSelect={handleSelectGame}
                 />
               ))}
             </div>
           </div>
+        ) : activeGame === 'snake' ? (
+          <CyberSnake onExit={() => setActiveGame(null)} />
         ) : (
           <div className="border border-cyan-500/40 p-12 bg-black/70 backdrop-blur-md text-center font-arcade max-w-lg">
             <ShieldAlert className="w-12 h-12 text-yellow-400 mx-auto mb-4 animate-bounce" />
