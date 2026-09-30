@@ -1,6 +1,7 @@
 // src/App.tsx
 import { useState } from 'react';
 import { Monitor, Volume2, VolumeX, Terminal, ShieldAlert } from 'lucide-react';
+import { sound } from './audio/NeonAudioSynth';
 import { CyberBackground } from './components/layout/CyberBackground';
 import { CRTOverlay } from './components/ui/CRTOverlay';
 import { GameCard } from './components/ui/GameCard';
@@ -59,6 +60,20 @@ export default function App() {
   const [crtActive, setCrtActive] = useState<boolean>(true);
   const [soundActive, setSoundActive] = useState<boolean>(true);
 
+  const toggleSound = () => {
+    const nextState = !soundActive;
+    sound.enabled = nextState;
+    setSoundActive(nextState);
+    if (nextState) {
+      sound.playBlip(580);
+    }
+  };
+
+  const handleSelectGame = (id: GameId) => {
+    sound.playBlip(700);
+    setActiveGame(id);
+  };
+
   return (
     <div className="min-h-screen text-[#e0f7fa] flex flex-col justify-between p-4 md:p-8 relative">
       <CyberBackground />
@@ -93,7 +108,7 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => setSoundActive((prev) => !prev)}
+            onClick={toggleSound}
             className={`p-2 border transition-all cursor-pointer ${
               soundActive
                 ? 'border-emerald-400 bg-emerald-400/20 text-emerald-300 shadow-[0_0_12px_rgba(57,255,20,0.4)]'
@@ -125,7 +140,7 @@ export default function App() {
                   key={game.id}
                   game={game}
                   highScore={0}
-                  onSelect={(id) => setActiveGame(id)}
+                  onSelect={handleSelectGame}
                 />
               ))}
             </div>
@@ -140,7 +155,10 @@ export default function App() {
               Simulation engine module ready for mounting.
             </p>
             <button
-              onClick={() => setActiveGame(null)}
+              onClick={() => {
+                  sound.playBlip(300);
+                  setActiveGame(null);
+              }}
               className="px-4 py-2 border border-pink-500 text-pink-400 hover:bg-pink-500/20 text-xs font-arcade cursor-pointer"
             >
               RETURN TO DECK
