@@ -13,6 +13,7 @@ import { CyberSnake } from './games/snake';
 import { TronPong } from './games/pong';
 import { NeonTetris } from './games/tetris';
 import { VectorBreakout } from './games/breakout';
+import { CyberSlime } from './games/slime';
 
 const ARCADE_GAMES: GameMetadata[] = [
   {
@@ -71,6 +72,7 @@ export default function App() {
   const { highScore: pongHighScore } = useHighScore('pong');
   const { highScore: tetrisHighScore } = useHighScore('tetris');
   const { highScore: breakoutHighScore } = useHighScore('breakout');
+  const { highScore: slimeHighScore } = useHighScore('slime');
 
   const toggleSound = () => {
     const nextState = !soundActive;
@@ -160,6 +162,8 @@ export default function App() {
                     ? tetrisHighScore
                     : game.id === 'breakout'
                     ? breakoutHighScore
+                    : game.id === 'slime'
+                    ? slimeHighScore
                     : 0
                 }
                   onSelect={handleSelectGame}
@@ -175,26 +179,9 @@ export default function App() {
           <NeonTetris onExit={() => setActiveGame(null)} />
         ) : activeGame === 'breakout' ? (
           <VectorBreakout onExit={() => setActiveGame(null)} />
-        ) : (
-          <div className="border border-cyan-500/40 p-12 bg-black/70 backdrop-blur-md text-center font-arcade max-w-lg">
-            <ShieldAlert className="w-12 h-12 text-yellow-400 mx-auto mb-4 animate-bounce" />
-            <p className="text-cyan-300 mb-4 tracking-wider">
-              CONNECTING TO {activeGame.toUpperCase()}...
-            </p>
-            <p className="text-gray-400 text-xs font-mono leading-relaxed mb-6">
-              Simulation engine module ready for mounting.
-            </p>
-            <button
-              onClick={() => {
-                  sound.playBlip(300);
-                  setActiveGame(null);
-              }}
-              className="px-4 py-2 border border-pink-500 text-pink-400 hover:bg-pink-500/20 text-xs font-arcade cursor-pointer"
-            >
-              RETURN TO DECK
-            </button>
-          </div>
-        )}
+        ) : activeGame === 'slime' ? (
+          <CyberSlime onExit={() => setActiveGame(null)} />
+        ) : null}
       </main>
 
       {/* Footer System Telemetry */}
