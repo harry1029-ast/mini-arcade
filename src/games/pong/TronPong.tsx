@@ -82,6 +82,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
   const playerScoreRef = useRef(0);
   const aiScoreRef = useRef(0);
   const winnerRef = useRef<'PLAYER' | 'AI' | null>(null);
+  const lastFrameTimeRef = useRef<number>(0);
   const recordScoreRef = useRef(recordScore);
   recordScoreRef.current = recordScore;
 
@@ -180,32 +181,39 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const gameLoop = () => {
+    const gameLoop = (timestamp: number) => {
+      // Calculate Delta Time (baseline: 60fps = 16.67ms)
+      if (!lastFrameTimeRef.current) lastFrameTimeRef.current = timestamp;
+      const elapsed = timestamp - lastFrameTimeRef.current;
+      lastFrameTimeRef.current = timestamp;
+      // Clamp dt between 0.2 and 2.5 to guard against background tab spikes
+      const dt = Math.min(Math.max(elapsed / 16.667, 0.2), 2.5);
+
       if (!winnerRef.current) {
         const ball = ballRef.current;
         const player = playerRef.current;
         const ai = aiRef.current;
         const config = currentDiffRef.current;
 
-        // 1. Move Player
+        // 1. Move Player (scaled by dt)
         if (keysRef.current.up && player.y > 0) {
-          player.y -= player.speed;
+          player.y -= player.speed * dt;
         }
         if (keysRef.current.down && player.y + player.height < HEIGHT) {
-          player.y += player.speed;
+          player.y += player.speed * dt;
         }
 
-        // 2. Configurable AI Tracking
+        // 2. Reactive AI Tracking (scaled by dt)
         const aiTarget = ball.y - ai.height / 2;
         const aiDiff = aiTarget - ai.y;
-        if (Math.abs(aiDiff) > config.aiDeadzone) {
-          ai.y += Math.sign(aiDiff) * ai.speed;
+        if (Math.abs(aiDiff) > 8) {
+          ai.y += Math.sign(aiDiff) * ai.speed * dt;
         }
         ai.y = Math.max(0, Math.min(HEIGHT - ai.height, ai.y));
 
-        // 3. Move Ball
-        ball.x += ball.vx;
-        ball.y += ball.vy;
+        // 3. Move Ball (scaled by dt)
+        ball.x += ball.vx * dt;
+        ball.y += ball.vy * dt;
 
         // Top / Bottom wall bounds
         if (ball.y - ball.radius <= 0) {
@@ -343,6 +351,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
       animId = requestAnimationFrame(gameLoop);
     };
 
+    lastFrameTimeRef.current = 0;
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
   }, [difficulty, resetBall]);
@@ -368,8 +377,8 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
               level === 'EASY'
                 ? 'border-emerald-500/40 hover:border-emerald-400 text-emerald-400 hover:bg-emerald-950/30'
                 : level === 'MEDIUM'
-                ? 'border-cyan-500/40 hover:border-cyan-400 text-cyan-400 hover:bg-cyan-950/30'
-                : 'border-pink-500/40 hover:border-pink-400 text-pink-400 hover:bg-pink-950/30';
+                  ? 'border-cyan-500/40 hover:border-cyan-400 text-cyan-400 hover:bg-cyan-950/30'
+                  : 'border-pink-500/40 hover:border-pink-400 text-pink-400 hover:bg-pink-950/30';
 
             return (
               <button
@@ -458,11 +467,10 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
         {winner && (
           <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center backdrop-blur-xs">
             <p
-              className={`font-cyber font-black text-2xl tracking-wider mb-2 ${
-                winner === 'PLAYER'
-                  ? 'text-cyan-400 drop-shadow-[0_0_10px_#00f3ff]'
-                  : 'text-red-500 drop-shadow-[0_0_10px_#ff0055]'
-              }`}
+              className={`font-cyber font-black text-2xl tracking-wider mb-2 ${winner === 'PLAYER'
+                ? 'text-cyan-400 drop-shadow-[0_0_10px_#00f3ff]'
+                : 'text-red-500 drop-shadow-[0_0_10px_#ff0055]'
+                }`}
             >
               {winner === 'PLAYER' ? 'SECTOR SECURED' : 'BREACH DETECTED'}
             </p>

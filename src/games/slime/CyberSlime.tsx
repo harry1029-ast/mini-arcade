@@ -76,6 +76,8 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     jump: false,
   });
 
+  const lastTimeRef = useRef<number>(0);
+
   const aiServeTicksRef = useRef<number>(0);
   const playerScoreRef = useRef(0);
   const aiScoreRef = useRef(0);
@@ -129,19 +131,19 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
 
     // Pick random AI serve style
     if (!servingPlayer) {
-        const roll = Math.random();
-        if (roll < 0.4) {
+      const roll = Math.random();
+      if (roll < 0.4) {
         aiServeTacticRef.current = 'FAST_SPIKE';
         aiServeDelayRef.current = 35 + Math.floor(Math.random() * 15); // Quick trigger
-        } else if (roll < 0.75) {
+      } else if (roll < 0.75) {
         aiServeTacticRef.current = 'HIGH_LOB';
         aiServeDelayRef.current = 45 + Math.floor(Math.random() * 20); // Medium pause
-        } else {
+      } else {
         aiServeTacticRef.current = 'SHORT_DROP';
         aiServeDelayRef.current = 65 + Math.floor(Math.random() * 25); // Delayed trick serve
-        }
+      }
     }
-    }, []);
+  }, []);
 
   const resetMatch = useCallback(() => {
     playerScoreRef.current = 0;
@@ -205,7 +207,13 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const gameLoop = () => {
+    const gameLoop = (timestamp: number) => {
+      // 1. Calculate Delta Time (baseline: 60fps = 16.67ms)
+      if (!lastTimeRef.current) lastTimeRef.current = timestamp;
+      const elapsed = timestamp - lastTimeRef.current;
+      lastTimeRef.current = timestamp;
+      const dt = Math.min(Math.max(elapsed / 16.667, 0.2), 2.5);
+
       if (!winnerRef.current) {
         const player = playerRef.current;
         const ai = aiRef.current;
@@ -223,9 +231,9 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
           sound.playBlip(380, 'triangle', 0.05);
         }
 
-        player.vy += GRAVITY;
-        player.x += player.vx;
-        player.y += player.vy;
+        player.vy += GRAVITY * dt;
+        player.x += player.vx * dt;
+        player.y += player.vy * dt;
 
         // Player boundary constraints
         if (player.x - player.radius < 0) player.x = player.radius;
@@ -306,9 +314,9 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
           }
         }
 
-        ai.vy += GRAVITY;
-        ai.x += ai.vx;
-        ai.y += ai.vy;
+        ai.vy += GRAVITY * dt;
+        ai.x += ai.vx * dt;
+        ai.y += ai.vy * dt;
 
         // AI boundary constraints
         if (ai.x - ai.radius < netX + NET_WIDTH / 2) {
@@ -351,9 +359,9 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
             spawnParticles(ball.x, ball.y, serverSlime.color, 12);
           }
         } else {
-          ball.vy += GRAVITY * 0.65;
-          ball.x += ball.vx;
-          ball.y += ball.vy;
+          ball.vy += GRAVITY * 0.65 * dt;
+          ball.x += ball.vx * dt;
+          ball.y += ball.vy * dt;
 
           // Outer wall bounces
           if (ball.x - ball.radius <= 0) {
@@ -547,6 +555,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       animId = requestAnimationFrame(gameLoop);
     };
 
+    lastTimeRef.current = 0;
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
   }, [stageServe]);
@@ -601,11 +610,10 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
         {winner && (
           <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center backdrop-blur-xs">
             <p
-              className={`font-cyber font-black text-2xl tracking-wider mb-2 ${
-                winner === 'PLAYER'
-                  ? 'text-purple-400 drop-shadow-[0_0_10px_#bc13fe]'
-                  : 'text-red-500 drop-shadow-[0_0_10px_#ff0055]'
-              }`}
+              className={`font-cyber font-black text-2xl tracking-wider mb-2 ${winner === 'PLAYER'
+                ? 'text-purple-400 drop-shadow-[0_0_10px_#bc13fe]'
+                : 'text-red-500 drop-shadow-[0_0_10px_#ff0055]'
+                }`}
             >
               {winner === 'PLAYER' ? 'SECTOR RECLAIMED' : 'RALLY LOST'}
             </p>
@@ -623,25 +631,43 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       </div>
 
       {/* Mobile Touch Controls */}
-      <div className="grid grid-cols-3 gap-3 mt-6 w-full max-w-xs md:hidden">
+      <div className="grid grid-cols-3 gap-3 mt-6 w-full max-w-xs md:hidden touch-control">
         <button
-          onTouchStart={() => (keysRef.current.left = true)}
-          onTouchEnd={() => (keysRef.current.left = false)}
-          className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            keysRef.current.left = true;
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            keysRef.current.left = false;
+          }}
+          className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black touch-control"
         >
           ◀ LEFT
         </button>
         <button
-          onTouchStart={() => (keysRef.current.jump = true)}
-          onTouchEnd={() => (keysRef.current.jump = false)}
-          className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            keysRef.current.jump = true;
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            keysRef.current.jump = false;
+          }}
+          className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black touch-control"
         >
           ▲ JUMP
         </button>
         <button
-          onTouchStart={() => (keysRef.current.right = true)}
-          onTouchEnd={() => (keysRef.current.right = false)}
-          className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            keysRef.current.right = true;
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            keysRef.current.right = false;
+          }}
+          className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black touch-control"
         >
           RIGHT ▶
         </button>
