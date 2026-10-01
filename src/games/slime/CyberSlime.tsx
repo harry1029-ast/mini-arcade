@@ -2,8 +2,8 @@
 import React, { useEffect, useRef, useState, useCallback, memo } from 'react';
 import { sound } from '../../audio/NeonAudioSynth';
 import { useHighScore } from '../../hooks/useHighScore';
-import type { SlimeEntity, SlimeBall, SlimeParticle, AiServeTactic } from './types';
-import { RotateCcw, ArrowLeft, Trophy } from 'lucide-react';
+import type { SlimeEntity, SlimeBall, SlimeParticle, AiServeTactic, SlimeMode } from './types';
+import { RotateCcw, ArrowLeft, Trophy, Users, User, Sliders } from 'lucide-react';
 
 interface CyberSlimeProps {
   onExit: () => void;
@@ -29,10 +29,14 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { highScore, recordScore } = useHighScore('slime');
 
+  const [mode, setMode] = useState<SlimeMode | null>(null);
   const [playerScore, setPlayerScore] = useState(0);
-  const [aiScore, setAiScore] = useState(0);
-  const [winner, setWinner] = useState<'PLAYER' | 'AI' | null>(null);
-  const [isPlayerServing, setIsPlayerServing] = useState(true);
+  const [p2Score, setP2Score] = useState(0);
+  const [winner, setWinner] = useState<'P1' | 'P2' | null>(null);
+  const [isServingState, setIsServingState] = useState<{ serving: boolean; server: 'PLAYER' | 'AI' }>({
+    serving: true,
+    server: 'PLAYER',
+  });
 
   const aiServeTacticRef = useRef<AiServeTactic>('FAST_SPIKE');
   const aiServeDelayRef = useRef<number>(45);
@@ -48,7 +52,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     isJumping: false,
   });
 
-  const aiRef = useRef<SlimeEntity>({
+  const p2Ref = useRef<SlimeEntity>({
     x: WIDTH - 80,
     y: GROUND_Y,
     vx: 0,
@@ -70,18 +74,30 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
   });
 
   const particlesRef = useRef<SlimeParticle[]>([]);
-  const keysRef = useRef<{ left: boolean; right: boolean; jump: boolean }>({
-    left: false,
-    right: false,
-    jump: false,
+  const keysRef = useRef<{
+    p1Left: boolean;
+    p1Right: boolean;
+    p1Jump: boolean;
+    p2Left: boolean;
+    p2Right: boolean;
+    p2Jump: boolean;
+  }>({
+    p1Left: false,
+    p1Right: false,
+    p1Jump: false,
+    p2Left: false,
+    p2Right: false,
+    p2Jump: false,
   });
 
   const lastTimeRef = useRef<number>(0);
+  const modeRef = useRef<SlimeMode | null>(mode);
+  modeRef.current = mode;
 
   const aiServeTicksRef = useRef<number>(0);
-  const playerScoreRef = useRef(0);
-  const aiScoreRef = useRef(0);
-  const winnerRef = useRef<'PLAYER' | 'AI' | null>(null);
+  const p1ScoreRef = useRef(0);
+  const p2ScoreRef = useRef(0);
+  const winnerRef = useRef<'P1' | 'P2' | null>(null);
   const recordScoreRef = useRef(recordScore);
   recordScoreRef.current = recordScore;
 
@@ -100,23 +116,23 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     }
   };
 
-  const stageServe = useCallback((servingPlayer: boolean) => {
+  const stageServe = useCallback((servingP1: boolean) => {
     aiServeTicksRef.current = 0;
 
-    // Reset initial court positions
+    // Reset court positions
     playerRef.current.x = 90;
     playerRef.current.y = GROUND_Y;
     playerRef.current.vx = 0;
     playerRef.current.vy = 0;
     playerRef.current.isJumping = false;
 
-    aiRef.current.x = WIDTH - 80;
-    aiRef.current.y = GROUND_Y;
-    aiRef.current.vx = 0;
-    aiRef.current.vy = 0;
-    aiRef.current.isJumping = false;
+    p2Ref.current.x = WIDTH - 80;
+    p2Ref.current.y = GROUND_Y;
+    p2Ref.current.vx = 0;
+    p2Ref.current.vy = 0;
+    p2Ref.current.isJumping = false;
 
-    const targetPos = servingPlayer ? PLAYER_SERVE_POS : AI_SERVE_POS;
+    const targetPos = servingP1 ? PLAYER_SERVE_POS : AI_SERVE_POS;
     ballRef.current = {
       x: targetPos.x,
       y: targetPos.y,
@@ -124,68 +140,121 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       vy: 0,
       radius: BALL_RADIUS,
       isServing: true,
-      server: servingPlayer ? 'PLAYER' : 'AI',
+      server: servingP1 ? 'PLAYER' : 'AI',
     };
 
-    setIsPlayerServing(servingPlayer);
+    setIsServingState({ serving: true, server: servingP1 ? 'PLAYER' : 'AI' });
 
-    // Pick random AI serve style
-    if (!servingPlayer) {
+    // In 1P mode, prepare AI serve strategy
+    if (!servingP1 && modeRef.current === '1P_AI') {
       const roll = Math.random();
       if (roll < 0.4) {
         aiServeTacticRef.current = 'FAST_SPIKE';
-        aiServeDelayRef.current = 35 + Math.floor(Math.random() * 15); // Quick trigger
+        aiServeDelayRef.current = 35 + Math.floor(Math.random() * 15);
       } else if (roll < 0.75) {
         aiServeTacticRef.current = 'HIGH_LOB';
-        aiServeDelayRef.current = 45 + Math.floor(Math.random() * 20); // Medium pause
+        aiServeDelayRef.current = 45 + Math.floor(Math.random() * 20);
       } else {
         aiServeTacticRef.current = 'SHORT_DROP';
-        aiServeDelayRef.current = 65 + Math.floor(Math.random() * 25); // Delayed trick serve
+        aiServeDelayRef.current = 65 + Math.floor(Math.random() * 25);
       }
     }
   }, []);
 
   const resetMatch = useCallback(() => {
-    playerScoreRef.current = 0;
-    aiScoreRef.current = 0;
+    p1ScoreRef.current = 0;
+    p2ScoreRef.current = 0;
     winnerRef.current = null;
     setPlayerScore(0);
-    setAiScore(0);
+    setP2Score(0);
     setWinner(null);
     particlesRef.current = [];
     stageServe(true);
     sound.playBlip(550);
   }, [stageServe]);
 
-  // Key listeners
+  const selectMode = (newMode: SlimeMode) => {
+    sound.playBlip(750);
+    setMode(newMode);
+    resetMatch();
+  };
+
+  // Dual-Keyboard listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        e.preventDefault();
-        keysRef.current.left = true;
+      // Player 1 (A / D / W)
+      if (e.key === 'a' || e.key === 'A') {
+        keysRef.current.p1Left = true;
       }
-      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        e.preventDefault();
-        keysRef.current.right = true;
+      if (e.key === 'd' || e.key === 'D') {
+        keysRef.current.p1Right = true;
       }
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') {
-        e.preventDefault();
-        keysRef.current.jump = true;
+      if (e.key === 'w' || e.key === 'W') {
+        keysRef.current.p1Jump = true;
       }
+
+      // Player 2 / AI
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (modeRef.current === '1P_AI') {
+          keysRef.current.p1Left = true; // Allow Arrow controls in 1P mode
+        } else {
+          keysRef.current.p2Left = true;
+        }
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (modeRef.current === '1P_AI') {
+          keysRef.current.p1Right = true;
+        } else {
+          keysRef.current.p2Right = true;
+        }
+      }
+      if (e.key === 'ArrowUp' || e.key === ' ') {
+        e.preventDefault();
+        if (modeRef.current === '1P_AI') {
+          keysRef.current.p1Jump = true;
+        } else {
+          keysRef.current.p2Jump = true;
+        }
+      }
+
       if ((e.key === 'r' || e.key === 'R') && winnerRef.current) {
         resetMatch();
       }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-        keysRef.current.left = false;
+      if (e.key === 'a' || e.key === 'A') {
+        keysRef.current.p1Left = false;
       }
-      if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-        keysRef.current.right = false;
+      if (e.key === 'd' || e.key === 'D') {
+        keysRef.current.p1Right = false;
       }
-      if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W' || e.key === ' ') {
-        keysRef.current.jump = false;
+      if (e.key === 'w' || e.key === 'W') {
+        keysRef.current.p1Jump = false;
+      }
+
+      if (e.key === 'ArrowLeft') {
+        if (modeRef.current === '1P_AI') {
+          keysRef.current.p1Left = false;
+        } else {
+          keysRef.current.p2Left = false;
+        }
+      }
+      if (e.key === 'ArrowRight') {
+        if (modeRef.current === '1P_AI') {
+          keysRef.current.p1Right = false;
+        } else {
+          keysRef.current.p2Right = false;
+        }
+      }
+      if (e.key === 'ArrowUp' || e.key === ' ') {
+        if (modeRef.current === '1P_AI') {
+          keysRef.current.p1Jump = false;
+        } else {
+          keysRef.current.p2Jump = false;
+        }
       }
     };
 
@@ -199,6 +268,8 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
 
   // Main Canvas Render & Physics Loop
   useEffect(() => {
+    if (!mode) return;
+
     stageServe(true);
     let animId: number;
 
@@ -208,7 +279,6 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     if (!ctx) return;
 
     const gameLoop = (timestamp: number) => {
-      // 1. Calculate Delta Time (baseline: 60fps = 16.67ms)
       if (!lastTimeRef.current) lastTimeRef.current = timestamp;
       const elapsed = timestamp - lastTimeRef.current;
       lastTimeRef.current = timestamp;
@@ -216,16 +286,16 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
 
       if (!winnerRef.current) {
         const player = playerRef.current;
-        const ai = aiRef.current;
+        const p2 = p2Ref.current;
         const ball = ballRef.current;
         const netX = WIDTH / 2;
 
-        // 1. Move Player
-        if (keysRef.current.left) player.vx = -MOVE_SPEED;
-        else if (keysRef.current.right) player.vx = MOVE_SPEED;
+        // 1. Move Player 1
+        if (keysRef.current.p1Left) player.vx = -MOVE_SPEED;
+        else if (keysRef.current.p1Right) player.vx = MOVE_SPEED;
         else player.vx = 0;
 
-        if (keysRef.current.jump && !player.isJumping) {
+        if (keysRef.current.p1Jump && !player.isJumping) {
           player.vy = JUMP_POWER;
           player.isJumping = true;
           sound.playBlip(380, 'triangle', 0.05);
@@ -235,7 +305,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
         player.x += player.vx * dt;
         player.y += player.vy * dt;
 
-        // Player boundary constraints
+        // Player 1 boundary constraints
         if (player.x - player.radius < 0) player.x = player.radius;
         if (player.x + player.radius > netX - NET_WIDTH / 2) {
           player.x = netX - NET_WIDTH / 2 - player.radius;
@@ -246,87 +316,96 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
           player.isJumping = false;
         }
 
-        // 2. AI Routine: Dynamic Serve Execution vs. Active Rally
-        if (ball.isServing) {
-          if (ball.server === 'AI') {
-            aiServeTicksRef.current += 1;
+        // 2. Move Player 2 (Local Human vs. AI)
+        if (modeRef.current === '2P_LOCAL') {
+          if (keysRef.current.p2Left) p2.vx = -MOVE_SPEED;
+          else if (keysRef.current.p2Right) p2.vx = MOVE_SPEED;
+          else p2.vx = 0;
 
-            if (aiServeTicksRef.current > aiServeDelayRef.current) {
-              // Calculate target strike offset depending on the selected tactic
-              let targetOffsetX = 14; // Default shoulder
-              let runSpeed = MOVE_SPEED * 0.8;
-
-              if (aiServeTacticRef.current === 'FAST_SPIKE') {
-                targetOffsetX = 20; // Hit with front edge for steep angle
-                runSpeed = MOVE_SPEED * 0.95;
-              } else if (aiServeTacticRef.current === 'HIGH_LOB') {
-                targetOffsetX = 3;  // Hit almost dead-center for high vertical arc
-                runSpeed = MOVE_SPEED * 0.65;
-              } else if (aiServeTacticRef.current === 'SHORT_DROP') {
-                targetOffsetX = -6; // Hit rear curve for slower drop
-                runSpeed = MOVE_SPEED * 0.55;
-              }
-
-              const targetX = AI_SERVE_POS.x + targetOffsetX;
-              const diffX = targetX - ai.x;
-
-              if (Math.abs(diffX) > 4) {
-                ai.vx = Math.sign(diffX) * runSpeed;
-              } else {
-                ai.vx = 0;
-                if (!ai.isJumping && ai.y >= GROUND_Y) {
-                  // Adjust jump power based on tactic
-                  ai.vy = aiServeTacticRef.current === 'SHORT_DROP' ? JUMP_POWER * 0.88 : JUMP_POWER;
-                  ai.isJumping = true;
-                }
-              }
-            } else {
-              ai.vx = 0;
-            }
-          } else {
-            // Player is serving: AI stays in defensive stance
-            const readyX = WIDTH - 120;
-            const diffX = readyX - ai.x;
-            if (Math.abs(diffX) > 8) ai.vx = Math.sign(diffX) * (MOVE_SPEED * 0.6);
-            else ai.vx = 0;
+          if (keysRef.current.p2Jump && !p2.isJumping) {
+            p2.vy = JUMP_POWER;
+            p2.isJumping = true;
+            sound.playBlip(420, 'triangle', 0.05);
           }
         } else {
-          // Standard Rally Tracking
-          const aiTarget = ball.x > netX ? ball.x : WIDTH - 120;
-          const distToBall = aiTarget - ai.x;
-          if (Math.abs(distToBall) > 10) {
-            ai.vx = Math.sign(distToBall) * (MOVE_SPEED * 0.88);
+          // AI Routine: Dynamic Serve vs. Rally Tracking
+          if (ball.isServing) {
+            if (ball.server === 'AI') {
+              aiServeTicksRef.current += 1;
+
+              if (aiServeTicksRef.current > aiServeDelayRef.current) {
+                let targetOffsetX = 14;
+                let runSpeed = MOVE_SPEED * 0.8;
+
+                if (aiServeTacticRef.current === 'FAST_SPIKE') {
+                  targetOffsetX = 20;
+                  runSpeed = MOVE_SPEED * 0.95;
+                } else if (aiServeTacticRef.current === 'HIGH_LOB') {
+                  targetOffsetX = 3;
+                  runSpeed = MOVE_SPEED * 0.65;
+                } else if (aiServeTacticRef.current === 'SHORT_DROP') {
+                  targetOffsetX = -6;
+                  runSpeed = MOVE_SPEED * 0.55;
+                }
+
+                const targetX = AI_SERVE_POS.x + targetOffsetX;
+                const diffX = targetX - p2.x;
+
+                if (Math.abs(diffX) > 4) {
+                  p2.vx = Math.sign(diffX) * runSpeed;
+                } else {
+                  p2.vx = 0;
+                  if (!p2.isJumping && p2.y >= GROUND_Y) {
+                    p2.vy = aiServeTacticRef.current === 'SHORT_DROP' ? JUMP_POWER * 0.88 : JUMP_POWER;
+                    p2.isJumping = true;
+                  }
+                }
+              } else {
+                p2.vx = 0;
+              }
+            } else {
+              const readyX = WIDTH - 120;
+              const diffX = readyX - p2.x;
+              if (Math.abs(diffX) > 8) p2.vx = Math.sign(diffX) * (MOVE_SPEED * 0.6);
+              else p2.vx = 0;
+            }
           } else {
-            ai.vx = 0;
-          }
+            // Standard Rally Tracking
+            const aiTarget = ball.x > netX ? ball.x : WIDTH - 120;
+            const distToBall = aiTarget - p2.x;
+            if (Math.abs(distToBall) > 10) {
+              p2.vx = Math.sign(distToBall) * (MOVE_SPEED * 0.88);
+            } else {
+              p2.vx = 0;
+            }
 
-          // Dynamic jump when ball is descending into AI reach
-          if (
-            ball.x > netX &&
-            ball.x > ai.x - 35 &&
-            ball.x < ai.x + 35 &&
-            ball.y < GROUND_Y - 45 &&
-            ball.vy > 0 &&
-            !ai.isJumping
-          ) {
-            ai.vy = JUMP_POWER;
-            ai.isJumping = true;
+            if (
+              ball.x > netX &&
+              ball.x > p2.x - 35 &&
+              ball.x < p2.x + 35 &&
+              ball.y < GROUND_Y - 45 &&
+              ball.vy > 0 &&
+              !p2.isJumping
+            ) {
+              p2.vy = JUMP_POWER;
+              p2.isJumping = true;
+            }
           }
         }
 
-        ai.vy += GRAVITY * dt;
-        ai.x += ai.vx * dt;
-        ai.y += ai.vy * dt;
+        p2.vy += GRAVITY * dt;
+        p2.x += p2.vx * dt;
+        p2.y += p2.vy * dt;
 
-        // AI boundary constraints
-        if (ai.x - ai.radius < netX + NET_WIDTH / 2) {
-          ai.x = netX + NET_WIDTH / 2 + ai.radius;
+        // Player 2 boundary constraints
+        if (p2.x - p2.radius < netX + NET_WIDTH / 2) {
+          p2.x = netX + NET_WIDTH / 2 + p2.radius;
         }
-        if (ai.x + ai.radius > WIDTH) ai.x = WIDTH - ai.radius;
-        if (ai.y >= GROUND_Y) {
-          ai.y = GROUND_Y;
-          ai.vy = 0;
-          ai.isJumping = false;
+        if (p2.x + p2.radius > WIDTH) p2.x = WIDTH - p2.radius;
+        if (p2.y >= GROUND_Y) {
+          p2.y = GROUND_Y;
+          p2.vy = 0;
+          p2.isJumping = false;
         }
 
         // 3. Move Ball
@@ -335,15 +414,14 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
           ball.x = anchor.x;
           ball.y = anchor.y + Math.sin(Date.now() / 160) * 3;
 
-          // Check if server slime strikes the floating ball
-          const serverSlime = ball.server === 'PLAYER' ? player : ai;
+          const serverSlime = ball.server === 'PLAYER' ? player : p2;
           const dx = ball.x - serverSlime.x;
           const dy = ball.y - serverSlime.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
           if (dist < serverSlime.radius + ball.radius && ball.y <= serverSlime.y) {
             ball.isServing = false;
-            setIsPlayerServing(false);
+            setIsServingState({ serving: false, server: ball.server });
 
             const nx = dx / (dist || 1);
             const ny = dy / (dist || 1);
@@ -396,7 +474,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
           }
 
           // Hemisphere Slime Collisions
-          const checkSlimeBounce = (slime: SlimeEntity, isPlayerSlime: boolean) => {
+          const checkSlimeBounce = (slime: SlimeEntity, isP1: boolean) => {
             const dx = ball.x - slime.x;
             const dy = ball.y - slime.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
@@ -416,13 +494,13 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
 
               if (ball.vy > -3) ball.vy = -6;
 
-              sound.playBlip(isPlayerSlime ? 650 : 520, 'sine', 0.07);
+              sound.playBlip(isP1 ? 650 : 520, 'sine', 0.07);
               spawnParticles(ball.x, ball.y, slime.color, 8);
             }
           };
 
           checkSlimeBounce(player, true);
-          checkSlimeBounce(ai, false);
+          checkSlimeBounce(p2, false);
 
           // Floor Scoring Trigger
           if (ball.y + ball.radius >= GROUND_Y) {
@@ -430,24 +508,28 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
             spawnParticles(ball.x, GROUND_Y, '#ff007f', 16);
 
             if (ball.x < netX) {
-              aiScoreRef.current += 1;
-              setAiScore(aiScoreRef.current);
+              // Point for P2 / AI
+              p2ScoreRef.current += 1;
+              setP2Score(p2ScoreRef.current);
 
-              if (aiScoreRef.current >= WINNING_SCORE) {
-                winnerRef.current = 'AI';
-                setWinner('AI');
+              if (p2ScoreRef.current >= WINNING_SCORE) {
+                winnerRef.current = 'P2';
+                setWinner('P2');
               } else {
                 stageServe(false);
               }
             } else {
-              playerScoreRef.current += 1;
-              setPlayerScore(playerScoreRef.current);
+              // Point for P1
+              p1ScoreRef.current += 1;
+              setPlayerScore(p1ScoreRef.current);
               sound.playChime();
-              recordScoreRef.current(playerScoreRef.current);
+              if (modeRef.current === '1P_AI') {
+                recordScoreRef.current(p1ScoreRef.current);
+              }
 
-              if (playerScoreRef.current >= WINNING_SCORE) {
-                winnerRef.current = 'PLAYER';
-                setWinner('PLAYER');
+              if (p1ScoreRef.current >= WINNING_SCORE) {
+                winnerRef.current = 'P1';
+                setWinner('P1');
               } else {
                 stageServe(true);
               }
@@ -477,7 +559,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       ctx.fillRect(WIDTH / 2 - NET_WIDTH / 2, GROUND_Y - NET_HEIGHT, NET_WIDTH, NET_HEIGHT);
 
       // Draw Slimes
-      const drawSlime = (slime: SlimeEntity, isAi: boolean) => {
+      const drawSlime = (slime: SlimeEntity, isRightSide: boolean) => {
         ctx.save();
         ctx.shadowBlur = 15;
         ctx.shadowColor = slime.glow;
@@ -489,7 +571,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
         ctx.fill();
 
         // Eye White
-        const eyeOffsetX = isAi ? -14 : 14;
+        const eyeOffsetX = isRightSide ? -14 : 14;
         const eyeX = slime.x + eyeOffsetX;
         const eyeY = slime.y - 20;
         const eyeRadius = 7;
@@ -514,7 +596,7 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
       };
 
       drawSlime(playerRef.current, false);
-      drawSlime(aiRef.current, true);
+      drawSlime(p2Ref.current, true);
 
       // Draw Ball
       const b = ballRef.current;
@@ -558,50 +640,134 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
     lastTimeRef.current = 0;
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
-  }, [stageServe]);
+  }, [mode, stageServe]);
 
-  return (
-    <div className="flex flex-col items-center max-w-2xl mx-auto w-full">
-      {/* Top HUD */}
-      <div className="flex items-center justify-between w-full mb-3 px-1">
+  // Initial Mode Selection Launcher
+  if (!mode) {
+    return (
+      <div className="flex flex-col items-center max-w-lg mx-auto w-full p-6 bg-[#080d1a]/90 border border-purple-500/40 backdrop-blur-md shadow-[0_0_30px_rgba(188,19,254,0.2)]">
+        <div className="flex items-center gap-2 mb-2 text-purple-400 font-arcade text-xs">
+          <Trophy className="w-4 h-4" /> CYBER_SLIME_ENGAGEMENT
+        </div>
+        <h2 className="font-cyber font-bold text-2xl text-white tracking-wider glow-purple mb-2">
+          SELECT MODE
+        </h2>
+        <p className="font-mono text-xs text-gray-400 text-center mb-6">
+          Initiate solo subroutine rally vs AI or link two players on one keyboard.
+        </p>
+
+        {/* 2-Player Local Option */}
+        <button
+          onClick={() => selectMode('2P_LOCAL')}
+          className="w-full p-4 mb-3 border border-purple-500/50 hover:border-purple-400 bg-purple-950/20 hover:bg-purple-950/40 text-purple-300 transition-all cursor-pointer group text-left shadow-[0_0_15px_rgba(188,19,254,0.15)]"
+        >
+          <div className="flex justify-between items-center mb-1">
+            <span className="font-arcade text-sm font-bold tracking-wider flex items-center gap-2">
+              <Users className="w-4 h-4 text-purple-400" /> LOCAL 2-PLAYER
+            </span>
+            <span className="font-mono text-[10px] text-purple-400">SPLIT-KEYBOARD</span>
+          </div>
+          <div className="font-mono text-xs text-gray-400 group-hover:text-gray-200">
+            P1: [A / D / W] vs P2: [Arrows]. Head-to-head volleyball rally.
+          </div>
+        </button>
+
+        {/* 1-Player Solo vs AI */}
+        <button
+          onClick={() => selectMode('1P_AI')}
+          className="w-full p-4 mb-6 border border-cyan-500/40 hover:border-cyan-400 bg-cyan-950/20 hover:bg-cyan-950/40 text-cyan-300 transition-all cursor-pointer group text-left shadow-[0_0_15px_rgba(0,243,255,0.15)]"
+        >
+          <div className="flex justify-between items-center mb-1">
+            <span className="font-arcade text-sm font-bold tracking-wider flex items-center gap-2">
+              <User className="w-4 h-4 text-cyan-400" /> 1-PLAYER VS AI
+            </span>
+            <span className="font-mono text-[10px] text-cyan-400">TACTICAL DEFENSE</span>
+          </div>
+          <div className="font-mono text-xs text-gray-400 group-hover:text-gray-200">
+            Solo practice vs adaptive AI with dynamic spike, lob, and drop serves.
+          </div>
+        </button>
+
         <button
           onClick={() => {
             sound.playBlip(300);
             onExit();
           }}
-          className="flex items-center gap-1.5 px-3 py-1 border border-pink-500/50 hover:bg-pink-500/20 text-xs font-arcade text-[#ff007f] cursor-pointer"
+          className="flex items-center gap-1.5 px-4 py-2 border border-gray-700 hover:border-pink-500/60 text-xs font-arcade text-gray-400 hover:text-pink-400 cursor-pointer transition-all"
         >
-          <ArrowLeft className="w-3.5 h-3.5" /> DECK
+          <ArrowLeft className="w-3.5 h-3.5" /> CANCEL TO DECK
         </button>
+      </div>
+    );
+  }
 
-        <div className="flex items-center gap-8">
-          <div className="flex items-center gap-1.5 text-xs font-arcade text-yellow-400">
-            <Trophy className="w-3.5 h-3.5" />
-            <span>RECORD: {highScore.toString().padStart(2, '0')}</span>
-          </div>
+  return (
+    <div className="flex flex-col items-center max-w-2xl mx-auto w-full">
+      {/* Top HUD */}
+      <div className="flex items-center justify-between w-full mb-3 px-1">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              sound.playBlip(300);
+              onExit();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1 border border-pink-500/50 hover:bg-pink-500/20 text-xs font-arcade text-[#ff007f] cursor-pointer"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> DECK
+          </button>
+
+          <button
+            onClick={() => {
+              sound.playBlip(400);
+              setMode(null);
+            }}
+            className="flex items-center gap-1 px-2.5 py-1 border border-purple-500/40 hover:bg-purple-500/20 text-[10px] font-arcade text-purple-300 cursor-pointer"
+            title="Change Mode"
+          >
+            <Sliders className="w-3 h-3" /> {mode === '2P_LOCAL' ? '2P LOCAL' : '1P VS AI'}
+          </button>
+        </div>
+
+        <div className="flex items-center gap-6">
+          {mode === '1P_AI' && (
+            <div className="flex items-center gap-1.5 text-xs font-arcade text-yellow-400">
+              <Trophy className="w-3.5 h-3.5" />
+              <span>RECORD: {highScore.toString().padStart(2, '0')}</span>
+            </div>
+          )}
 
           <div className="flex items-center gap-4 text-sm font-arcade">
-            <span className="text-purple-400">USER: {playerScore}</span>
+            <span className="text-purple-400">
+              {mode === '2P_LOCAL' ? 'P1' : 'USER'}: {playerScore}
+            </span>
             <span className="text-gray-600">|</span>
-            <span className="text-cyan-400">AI: {aiScore}</span>
+            <span className="text-cyan-400">
+              {mode === '2P_LOCAL' ? 'P2' : 'AI'}: {p2Score}
+            </span>
           </div>
         </div>
       </div>
 
       {/* Screen Frame & Canvas */}
-      <div className="relative border-2 border-purple-500/80 p-1 bg-black shadow-[0_0_20px_rgba(188,19,254,0.3)]">
+      <div className="relative border-2 border-purple-500/80 p-1 bg-black shadow-[0_0_20px_rgba(188,19,254,0.3)] w-full max-w-[640px] touch-control">
         <canvas
           ref={canvasRef}
           width={WIDTH}
           height={HEIGHT}
-          className="block w-full max-w-[640px] h-auto"
+          className="block w-full h-auto touch-control select-none"
         />
 
-        {/* Player Serve Prompt */}
-        {isPlayerServing && !winner && (
+        {/* Serve Prompt */}
+        {isServingState.serving && !winner && (
           <div className="absolute bottom-16 left-8 pointer-events-none">
             <span className="font-arcade text-[10px] text-purple-300 tracking-wider animate-pulse bg-black/75 px-3 py-1.5 border border-purple-500/50 shadow-[0_0_10px_rgba(188,19,254,0.4)]">
-              LINE UP & LEAP TO SERVE
+              {isServingState.server === 'PLAYER'
+                ? mode === '2P_LOCAL'
+                  ? 'PLAYER 1 SERVE: LEAP INTO BALL'
+                  : 'LINE UP & LEAP TO SERVE'
+                : mode === '2P_LOCAL'
+                  ? 'PLAYER 2 SERVE: LEAP INTO BALL'
+                  : 'AI PREPARING SERVE...'}
             </span>
           </div>
         )}
@@ -610,36 +776,54 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
         {winner && (
           <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center backdrop-blur-xs">
             <p
-              className={`font-cyber font-black text-2xl tracking-wider mb-2 ${winner === 'PLAYER'
-                ? 'text-purple-400 drop-shadow-[0_0_10px_#bc13fe]'
-                : 'text-red-500 drop-shadow-[0_0_10px_#ff0055]'
+              className={`font-cyber font-black text-2xl tracking-wider mb-2 ${winner === 'P1'
+                  ? 'text-purple-400 drop-shadow-[0_0_10px_#bc13fe]'
+                  : 'text-cyan-400 drop-shadow-[0_0_10px_#00f3ff]'
                 }`}
             >
-              {winner === 'PLAYER' ? 'SECTOR RECLAIMED' : 'RALLY LOST'}
+              {mode === '2P_LOCAL'
+                ? winner === 'P1'
+                  ? 'PLAYER 1 VICTORIOUS'
+                  : 'PLAYER 2 VICTORIOUS'
+                : winner === 'P1'
+                  ? 'SECTOR RECLAIMED'
+                  : 'RALLY LOST'}
             </p>
             <p className="font-arcade text-xs text-gray-400 mb-6">
-              FINAL SCORE: {playerScore} - {aiScore}
+              FINAL SCORE: {playerScore} - {p2Score}
             </p>
-            <button
-              onClick={resetMatch}
-              className="flex items-center gap-2 px-4 py-2 border border-purple-400 bg-purple-500/20 text-purple-300 hover:bg-purple-400 hover:text-black font-arcade text-xs transition-all cursor-pointer shadow-[0_0_15px_rgba(188,19,254,0.4)]"
-            >
-              <RotateCcw className="w-4 h-4" /> PLAY AGAIN [R]
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={resetMatch}
+                className="flex items-center gap-2 px-4 py-2 border border-purple-400 bg-purple-500/20 text-purple-300 hover:bg-purple-400 hover:text-black font-arcade text-xs transition-all cursor-pointer shadow-[0_0_15px_rgba(188,19,254,0.4)]"
+              >
+                <RotateCcw className="w-4 h-4" /> PLAY AGAIN [R]
+              </button>
+
+              <button
+                onClick={() => {
+                  sound.playBlip(400);
+                  setMode(null);
+                }}
+                className="px-4 py-2 border border-pink-500/60 hover:bg-pink-500/20 text-pink-400 font-arcade text-xs transition-all cursor-pointer"
+              >
+                CHANGE MODE
+              </button>
+            </div>
           </div>
         )}
       </div>
 
-      {/* Mobile Touch Controls */}
+      {/* Mobile Touch Controls (Player 1) */}
       <div className="grid grid-cols-3 gap-3 mt-6 w-full max-w-xs md:hidden touch-control">
         <button
           onTouchStart={(e) => {
             e.preventDefault();
-            keysRef.current.left = true;
+            keysRef.current.p1Left = true;
           }}
           onTouchEnd={(e) => {
             e.preventDefault();
-            keysRef.current.left = false;
+            keysRef.current.p1Left = false;
           }}
           className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black touch-control"
         >
@@ -648,11 +832,11 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
         <button
           onTouchStart={(e) => {
             e.preventDefault();
-            keysRef.current.jump = true;
+            keysRef.current.p1Jump = true;
           }}
           onTouchEnd={(e) => {
             e.preventDefault();
-            keysRef.current.jump = false;
+            keysRef.current.p1Jump = false;
           }}
           className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black touch-control"
         >
@@ -661,11 +845,11 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
         <button
           onTouchStart={(e) => {
             e.preventDefault();
-            keysRef.current.right = true;
+            keysRef.current.p1Right = true;
           }}
           onTouchEnd={(e) => {
             e.preventDefault();
-            keysRef.current.right = false;
+            keysRef.current.p1Right = false;
           }}
           className="p-3 border border-purple-500/40 bg-purple-950/40 text-purple-300 font-arcade text-xs active:bg-purple-400 active:text-black touch-control"
         >
@@ -673,8 +857,16 @@ const CyberSlimeComponent: React.FC<CyberSlimeProps> = ({ onExit }) => {
         </button>
       </div>
 
+      {/* Desktop Controls Legend */}
       <div className="mt-4 text-[10px] font-mono text-gray-500 hidden md:block">
-        POSITION: [A / D] OR [LEFT / RIGHT] // LEAP TO SERVE: [W / SPACE / UP]
+        {mode === '2P_LOCAL' ? (
+          <span>
+            P1 (PURPLE): <strong className="text-purple-400">[A / D / W]</strong> &nbsp;|&nbsp; P2 (CYAN):{' '}
+            <strong className="text-cyan-400">[ARROWS]</strong> &nbsp;|&nbsp; RESTART: [R]
+          </span>
+        ) : (
+          <span>MOVE: [A / D] OR [LEFT / RIGHT] // JUMP: [W / SPACE / UP] // RESTART: [R]</span>
+        )}
       </div>
     </div>
   );
