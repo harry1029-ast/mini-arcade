@@ -63,6 +63,8 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
   const livesRef = useRef(INITIAL_LIVES);
   const gameStateRef = useRef<'PLAYING' | 'WON' | 'LOST'>('PLAYING');
 
+  const lastTimeRef = useRef<number>(0);
+
   const recordScoreRef = useRef(recordScore);
   recordScoreRef.current = recordScore;
 
@@ -195,17 +197,24 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const gameLoop = () => {
+    const gameLoop = (timestamp: number) => {
+
+      // 1. Calculate Delta Time (baseline: 60fps = 16.67ms)
+      if (!lastTimeRef.current) lastTimeRef.current = timestamp;
+      const elapsed = timestamp - lastTimeRef.current;
+      lastTimeRef.current = timestamp;
+      const dt = Math.min(Math.max(elapsed / 16.667, 0.2), 2.5);
+
       const paddle = paddleRef.current;
       const ball = ballRef.current;
 
       if (gameStateRef.current === 'PLAYING') {
-        // 1. Move Paddle
+        // 1. Move Paddle (scaled by dt)
         if (keysRef.current.left && paddle.x > 0) {
-          paddle.x -= paddle.speed;
+          paddle.x -= paddle.speed * dt;
         }
         if (keysRef.current.right && paddle.x + paddle.width < WIDTH) {
-          paddle.x += paddle.speed;
+          paddle.x += paddle.speed * dt;
         }
 
         // Staged ball stays centered on paddle
@@ -214,8 +223,8 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
           ball.y = paddle.y - ball.radius - 1;
         } else {
           // Move Ball
-          ball.x += ball.vx;
-          ball.y += ball.vy;
+          ball.x += ball.vx * dt;
+          ball.y += ball.vy * dt;
 
           // Side wall bounce
           if (ball.x - ball.radius <= 0) {
@@ -273,8 +282,8 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
               spawnParticles(brick.x + brick.width / 2, brick.y + brick.height / 2, brick.color, 14);
 
               // Determine collision normal (vertical vs horizontal penetration)
-              const prevX = ball.x - ball.vx;
-              const prevY = ball.y - ball.vy;
+              const prevX = ball.x - ball.vx * dt;
+              const prevY = ball.y - ball.vy * dt;
 
               if (prevX + ball.radius < brick.x || prevX - ball.radius > brick.x + brick.width) {
                 ball.vx = -ball.vx;
@@ -351,12 +360,12 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
       ctx.fill();
       ctx.shadowBlur = 0;
 
-      // Draw Particles
+      // Draw Particles (scaled by dt)
       for (let i = particlesRef.current.length - 1; i >= 0; i--) {
         const pt = particlesRef.current[i];
-        pt.x += pt.vx;
-        pt.y += pt.vy;
-        pt.alpha -= 0.03;
+        pt.x += pt.vx * dt;
+        pt.y += pt.vy * dt;
+        pt.alpha -= 0.03 * dt;
         if (pt.alpha <= 0) {
           particlesRef.current.splice(i, 1);
         } else {
@@ -371,6 +380,8 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
       animId = requestAnimationFrame(gameLoop);
     };
 
+    // Reset timestamp so the first frame doesn't spike
+    lastTimeRef.current = 0;
     animId = requestAnimationFrame(gameLoop);
     return () => cancelAnimationFrame(animId);
   }, [initBricks, resetBall]);
@@ -399,9 +410,8 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
             {Array.from({ length: INITIAL_LIVES }).map((_, i) => (
               <Heart
                 key={i}
-                className={`w-3.5 h-3.5 ${
-                  i < lives ? 'fill-red-500 text-red-500' : 'text-gray-700'
-                }`}
+                className={`w-3.5 h-3.5 ${i < lives ? 'fill-red-500 text-red-500' : 'text-gray-700'
+                  }`}
               />
             ))}
           </div>
@@ -434,11 +444,10 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
         {gameState !== 'PLAYING' && (
           <div className="absolute inset-0 bg-black/85 flex flex-col items-center justify-center p-6 text-center backdrop-blur-xs">
             <p
-              className={`font-cyber font-black text-2xl tracking-wider mb-2 ${
-                gameState === 'WON'
-                  ? 'text-cyan-400 drop-shadow-[0_0_10px_#00f3ff]'
-                  : 'text-red-500 drop-shadow-[0_0_10px_#ff0055]'
-              }`}
+              className={`font-cyber font-black text-2xl tracking-wider mb-2 ${gameState === 'WON'
+                ? 'text-cyan-400 drop-shadow-[0_0_10px_#00f3ff]'
+                : 'text-red-500 drop-shadow-[0_0_10px_#ff0055]'
+                }`}
             >
               {gameState === 'WON' ? 'FIREWALL BYPASSED' : 'CORE SHUTDOWN'}
             </p>
@@ -459,24 +468,39 @@ const VectorBreakoutComponent: React.FC<VectorBreakoutProps> = ({ onExit }) => {
       </div>
 
       {/* Mobile Touch Controls */}
-      <div className="flex gap-4 mt-6 md:hidden">
+      <div className="flex gap-4 mt-6 md:hidden touch-control">
         <button
-          onTouchStart={() => (keysRef.current.left = true)}
-          onTouchEnd={() => (keysRef.current.left = false)}
-          className="p-4 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-sm"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            keysRef.current.left = true;
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            keysRef.current.left = false;
+          }}
+          className="p-4 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-sm active:bg-cyan-400 active:text-black touch-control"
         >
           ◀ LEFT
         </button>
         <button
-          onClick={launchBall}
-          className="p-4 border border-amber-500/40 bg-amber-950/40 text-amber-300 font-arcade text-sm"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            launchBall();
+          }}
+          className="p-4 border border-amber-500/40 bg-amber-950/40 text-amber-300 font-arcade text-sm active:bg-amber-400 active:text-black touch-control"
         >
           LAUNCH
         </button>
         <button
-          onTouchStart={() => (keysRef.current.right = true)}
-          onTouchEnd={() => (keysRef.current.right = false)}
-          className="p-4 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-sm"
+          onTouchStart={(e) => {
+            e.preventDefault();
+            keysRef.current.right = true;
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            keysRef.current.right = false;
+          }}
+          className="p-4 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-sm active:bg-cyan-400 active:text-black touch-control"
         >
           RIGHT ▶
         </button>
