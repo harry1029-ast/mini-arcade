@@ -46,7 +46,6 @@ const DIFFICULTY_CONFIGS: Record<PongDifficulty, PongDifficultyConfig> = {
 const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const { highScore, recordScore } = useHighScore('pong');
-
   const [difficulty, setDifficulty] = useState<PongDifficulty | null>(null);
   const [playerScore, setPlayerScore] = useState(0);
   const [aiScore, setAiScore] = useState(0);
@@ -87,6 +86,27 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
   recordScoreRef.current = recordScore;
 
   const currentDiffRef = useRef<PongDifficultyConfig>(DIFFICULTY_CONFIGS.MEDIUM);
+
+
+  // Add touch tracking for canvas dragging:
+  const handleCanvasTouch = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    // Calculate relative Y inside the canvas coordinate system (0 to HEIGHT)
+    const clientY = touch.clientY - rect.top;
+    const scaleY = HEIGHT / rect.height;
+    const canvasY = clientY * scaleY;
+
+    // Center paddle at finger position, bounded by screen edges
+    playerRef.current.y = Math.max(
+      0,
+      Math.min(HEIGHT - playerRef.current.height, canvasY - playerRef.current.height / 2)
+    );
+  };
 
   const spawnParticles = (x: number, y: number, color: string) => {
     for (let i = 0; i < 12; i++) {
@@ -460,7 +480,9 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
           ref={canvasRef}
           width={WIDTH}
           height={HEIGHT}
-          className="block w-full max-w-[600px] h-auto"
+          onTouchStart={handleCanvasTouch}
+          onTouchMove={handleCanvasTouch}
+          className="block w-full h-auto touch-control select-none"
         />
 
         {/* Win/Loss Modal Screen */}
@@ -502,7 +524,38 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
         )}
       </div>
 
-      <div className="mt-4 text-[10px] font-mono text-gray-500">
+      {/* Mobile Touch Controls */}
+      <div className="flex justify-between w-full max-w-xs mt-6 px-4 md:hidden touch-control">
+        <button
+          onTouchStart={(e) => {
+            e.preventDefault();
+            keysRef.current.up = true;
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            keysRef.current.up = false;
+          }}
+          className="w-28 h-14 flex items-center justify-center border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs rounded active:bg-cyan-400 active:text-black touch-control"
+        >
+          ▲ UP
+        </button>
+
+        <button
+          onTouchStart={(e) => {
+            e.preventDefault();
+            keysRef.current.down = true;
+          }}
+          onTouchEnd={(e) => {
+            e.preventDefault();
+            keysRef.current.down = false;
+          }}
+          className="w-28 h-14 flex items-center justify-center border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs rounded active:bg-cyan-400 active:text-black touch-control"
+        >
+          ▼ DOWN
+        </button>
+      </div>
+
+      <div className="mt-4 text-[10px] font-mono text-gray-500 hidden md:block">
         CONTROLS: [W / S] OR [UP / DOWN] // RESTART: [R]
       </div>
     </div>
