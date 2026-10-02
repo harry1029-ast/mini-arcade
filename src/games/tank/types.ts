@@ -13,7 +13,7 @@ export interface TankEntity {
     shootCooldown: number;
 }
 
-export type TankMode = 'SOLO' | 'LOCAL_2P';
+export type TankMode = 'SOLO' | 'LOCAL_2P' | '2P_ONLINE';
 
 export interface Bullet {
     x: number;

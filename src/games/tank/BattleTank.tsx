@@ -19,7 +19,20 @@ import {
     TOTAL_LEVELS,
 } from './constants';
 import type { TankMode } from './types';
-import { ArrowLeft, RotateCcw, Trophy, Shield, Crosshair, Users, User, Sliders } from 'lucide-react';
+import { usePeerRoom } from '../../hooks/usePeerRoom';
+import type { TankNetworkPacket, TankSoundEvent } from '../../types/network';
+import {
+    ArrowLeft,
+    RotateCcw,
+    Shield,
+    Crosshair,
+    Users,
+    User,
+    Sliders,
+    Globe,
+    Copy,
+    Check,
+} from 'lucide-react';
 
 interface BattleTankProps {
     onExit: () => void;
@@ -37,15 +50,25 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
     const [enemiesRemaining, setEnemiesRemaining] = useState(TOTAL_ENEMIES_WAVE);
     const [gameState, setGameState] = useState<'PLAYING' | 'LEVEL_CLEARED' | 'VICTORY' | 'GAME_OVER'>('PLAYING');
 
+    // Online Lobby & Ping States
+    const [isLobbyOpen, setIsLobbyOpen] = useState(false);
+    const [joinInput, setJoinInput] = useState('');
+    const [copied, setCopied] = useState(false);
+    const [ping, setPing] = useState<number | null>(null);
+    const sendPacketRef = useRef<(packet: TankNetworkPacket) => void>(() => { });
+
     // Authoritative Refs
     const modeRef = useRef<TankMode | null>(null);
     modeRef.current = mode;
+    const roleRef = useRef<string | null>(null);
     const scoreRef = useRef(0);
     const p1LivesRef = useRef(3);
     const p2LivesRef = useRef(3);
     const levelRef = useRef(1);
     const gameStateRef = useRef<'PLAYING' | 'LEVEL_CLEARED' | 'VICTORY' | 'GAME_OVER'>('PLAYING');
     const remainingEnemiesRef = useRef(TOTAL_ENEMIES_WAVE);
+    const syncTickRef = useRef<number>(0);
+    const pendingSfxRef = useRef<TankSoundEvent | null>(null);
 
     // Eagle Base state
     const baseAliveRef = useRef(true);
@@ -112,6 +135,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
     // Keep a stable ref so scoring updates do not re-trigger canvas useEffect
     const recordScoreRef = useRef(recordScore);
     recordScoreRef.current = recordScore;
+    const resetGameRef = useRef<() => void>(() => { });
 
     // Load Wall Bricks from Current Level Pattern
     const initMap = useCallback((lvlIndex = 0) => {
@@ -126,6 +150,135 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
         }
         bricksRef.current = bricks;
     }, []);
+
+    // P2P Data Handler
+    const handleNetworkData = useCallback((data: TankNetworkPacket) => {
+        if (data.type === 'TANK_START_GAME') {
+            setMode('2P_ONLINE');
+            modeRef.current = '2P_ONLINE';
+            setIsLobbyOpen(false);
+            resetGameRef.current();
+        } else if (data.type === 'TANK_RESTART_REQUEST') {
+            // Host executes match restart when requested by Guest
+            resetGameRef.current();
+        } else if (data.type === 'PING') {
+            sendPacketRef.current({ type: 'PONG_REPLY', timestamp: data.timestamp });
+        } else if (data.type === 'PONG_REPLY') {
+            const rtt = Math.max(1, Math.round(performance.now() - data.timestamp));
+            setPing(Math.round(rtt / 2));
+        } else if (data.type === 'TANK_GUEST_INPUT') {
+            // Host applies guest inputs
+            keysRef.current.p2Up = data.up;
+            keysRef.current.p2Down = data.down;
+            keysRef.current.p2Left = data.left;
+            keysRef.current.p2Right = data.right;
+            keysRef.current.p2Fire = data.fire;
+        } else if (data.type === 'TANK_HOST_SYNC') {
+            // Play audio synced from host
+            if (data.sfx) {
+                if (data.sfx === 'FIRE_P1') sound.playBlip(780, 'square', 0.05);
+                else if (data.sfx === 'FIRE_P2') sound.playBlip(640, 'square', 0.05);
+                else if (data.sfx === 'BRICK_HIT') sound.playBounce();
+                else if (data.sfx === 'EXPLOSION') sound.playExplosion();
+                else if (data.sfx === 'VICTORY') sound.playChime();
+            }
+
+            // If level or new game started, refresh map bricks
+            if (levelRef.current !== data.level || (data.gameState === 'PLAYING' && gameStateRef.current !== 'PLAYING')) {
+                initMap(data.level - 1);
+            }
+
+            // Guest updates authoritative world state
+            p1Ref.current.x = data.p1.x;
+            p1Ref.current.y = data.p1.y;
+            p1Ref.current.dir = data.p1.dir;
+            p1Ref.current.alive = data.p1.alive;
+
+            p2Ref.current.x = data.p2.x;
+            p2Ref.current.y = data.p2.y;
+            p2Ref.current.dir = data.p2.dir;
+            p2Ref.current.alive = data.p2.alive;
+
+            enemiesRef.current = data.enemies.map((e) => ({
+                x: e.x,
+                y: e.y,
+                dir: e.dir,
+                speed: ENEMY_SPEED,
+                size: TANK_SIZE,
+                alive: e.alive,
+                color: '#b026ff',
+                glow: '#d946ef',
+                shootCooldown: 0,
+            }));
+
+            bulletsRef.current = data.bullets.map((b) => ({
+                x: b.x,
+                y: b.y,
+                dir: b.dir,
+                speed: BULLET_SPEED,
+                size: BULLET_SIZE,
+                owner: b.owner,
+                color: b.color,
+            }));
+
+            // Sync brick states (resets alive: true for repaired/reloaded bricks)
+            const deadSet = new Set(data.deadBrickIndices);
+            for (let idx = 0; idx < bricksRef.current.length; idx++) {
+                bricksRef.current[idx].alive = !deadSet.has(idx);
+            }
+
+            baseAliveRef.current = data.baseAlive;
+            p1LivesRef.current = data.p1Lives;
+            p2LivesRef.current = data.p2Lives;
+            scoreRef.current = data.score;
+            levelRef.current = data.level;
+            gameStateRef.current = data.gameState;
+
+            setP1Lives(data.p1Lives);
+            setP2Lives(data.p2Lives);
+            setScore(data.score);
+            setCurrentLevel(data.level);
+            setGameState(data.gameState);
+
+            if (data.ping !== undefined) {
+                setPing(data.ping);
+            }
+        }
+    }, [initMap]);
+
+    const {
+        role,
+        roomId,
+        status,
+        errorMsg,
+        peerDisconnected,
+        sendPacket,
+        createRoom,
+        joinRoom,
+        disconnect,
+    } = usePeerRoom<TankNetworkPacket>(handleNetworkData);
+
+    roleRef.current = role;
+    sendPacketRef.current = sendPacket;
+
+    // Host Ping Heartbeat
+    useEffect(() => {
+        if (status !== 'CONNECTED' || role !== 'HOST') return;
+        const interval = setInterval(() => {
+            sendPacketRef.current({
+                type: 'PING',
+                timestamp: performance.now(),
+            });
+        }, 1500);
+        return () => clearInterval(interval);
+    }, [status, role]);
+
+    const copyRoomCode = () => {
+        if (!roomId) return;
+        navigator.clipboard.writeText(roomId);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    };
 
     const spawnParticles = (x: number, y: number, color: string, count = 10) => {
         for (let i = 0; i < count; i++) {
@@ -203,13 +356,15 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
             shootCooldown: 0,
         };
 
+        const is2Player = modeRef.current === 'LOCAL_2P' || modeRef.current === '2P_ONLINE';
+
         p2Ref.current = {
             x: 16 * CELL_SIZE,
             y: 24 * CELL_SIZE,
             dir: 'UP',
             speed: PLAYER_SPEED,
             size: TANK_SIZE,
-            alive: modeRef.current === 'LOCAL_2P' && p2LivesRef.current > 0,
+            alive: is2Player && p2LivesRef.current > 0,
             color: '#ff0055',
             glow: '#ff0055',
             shootCooldown: 0,
@@ -232,6 +387,8 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
         setP2Lives(3);
         startLevel(1);
     }, [startLevel, clearKeys]);
+
+    resetGameRef.current = resetGame;
 
     const selectMode = useCallback((selectedMode: TankMode) => {
         sound.playBlip(750);
@@ -290,6 +447,27 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                 keysRef.current.p1Fire = true;
             }
 
+            // Online Guest: transmits P2 input directly to host
+            if (modeRef.current === '2P_ONLINE' && roleRef.current === 'GUEST') {
+                let changed = false;
+                if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { e.preventDefault(); keysRef.current.p2Up = true; changed = true; }
+                if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { e.preventDefault(); keysRef.current.p2Down = true; changed = true; }
+                if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { e.preventDefault(); keysRef.current.p2Left = true; changed = true; }
+                if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { e.preventDefault(); keysRef.current.p2Right = true; changed = true; }
+                if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); keysRef.current.p2Fire = true; changed = true; }
+                if (changed) {
+                    sendPacketRef.current({
+                        type: 'TANK_GUEST_INPUT',
+                        up: keysRef.current.p2Up,
+                        down: keysRef.current.p2Down,
+                        left: keysRef.current.p2Left,
+                        right: keysRef.current.p2Right,
+                        fire: keysRef.current.p2Fire,
+                    });
+                }
+                return;
+            }
+
             // Arrow Keys + Enter: P2 in LOCAL_2P mode, or alternative P1 in SOLO mode
             if (e.key === 'ArrowUp') {
                 e.preventDefault();
@@ -318,7 +496,11 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
             }
 
             if ((e.key === 'r' || e.key === 'R') && gameStateRef.current !== 'PLAYING') {
-                resetGame();
+                if (modeRef.current === '2P_ONLINE' && role === 'GUEST') {
+                    sendPacketRef.current({ type: 'TANK_RESTART_REQUEST' });
+                } else {
+                    resetGame();
+                }
             }
         };
 
@@ -329,6 +511,27 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
             if (e.key === 'a' || e.key === 'A') keysRef.current.p1Left = false;
             if (e.key === 'd' || e.key === 'D') keysRef.current.p1Right = false;
             if (e.key === ' ' || e.code === 'Space') keysRef.current.p1Fire = false;
+
+            // Online Guest: transmits P2 key releases
+            if (modeRef.current === '2P_ONLINE' && roleRef.current === 'GUEST') {
+                let changed = false;
+                if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') { keysRef.current.p2Up = false; changed = true; }
+                if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') { keysRef.current.p2Down = false; changed = true; }
+                if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { keysRef.current.p2Left = false; changed = true; }
+                if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { keysRef.current.p2Right = false; changed = true; }
+                if (e.key === ' ' || e.key === 'Enter') { keysRef.current.p2Fire = false; changed = true; }
+                if (changed) {
+                    sendPacketRef.current({
+                        type: 'TANK_GUEST_INPUT',
+                        up: keysRef.current.p2Up,
+                        down: keysRef.current.p2Down,
+                        left: keysRef.current.p2Left,
+                        right: keysRef.current.p2Right,
+                        fire: keysRef.current.p2Fire,
+                    });
+                }
+                return;
+            }
 
             // Mirror keyup behavior cleanly for both modes
             if (e.key === 'ArrowUp') {
@@ -400,6 +603,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
 
             if (owner === 'P1' || owner === 'P2') {
                 sound.playBlip(owner === 'P1' ? 780 : 640, 'square', 0.05);
+                pendingSfxRef.current = owner === 'P1' ? 'FIRE_P1' : 'FIRE_P2';
             }
         };
 
@@ -409,7 +613,12 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
             lastTimeRef.current = timestamp;
             const dt = Math.min(Math.max(elapsed / 16.667, 0.2), 2.5);
 
-            if (gameStateRef.current === 'PLAYING') {
+            const isAuthoritativeHost = modeRef.current !== '2P_ONLINE' || role === 'HOST';
+
+            if (gameStateRef.current === 'PLAYING' && isAuthoritativeHost) {
+                const p1 = p1Ref.current;
+                const p2 = p2Ref.current;
+
                 // Enemy Wave Spawner
                 spawnTimer += dt;
                 if (spawnTimer > 120 && enemiesRef.current.length < MAX_ACTIVE_ENEMIES) {
@@ -418,7 +627,6 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                 }
 
                 // Player 1 (Cyan) Update
-                const p1 = p1Ref.current;
                 if (p1.alive) {
                     let nextX = p1.x;
                     let nextY = p1.y;
@@ -453,9 +661,8 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     }
                 }
 
-                // Player 2 (Red) Update (2P Local Mode)
-                const p2 = p2Ref.current;
-                if (modeRef.current === 'LOCAL_2P' && p2.alive) {
+                // Player 2 (Red) Update (Local or Online 2P Mode)
+                if ((modeRef.current === 'LOCAL_2P' || modeRef.current === '2P_ONLINE') && p2.alive) {
                     let nextX = p2.x;
                     let nextY = p2.y;
                     let moved = false;
@@ -595,6 +802,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     }
                     if (hitBrick) {
                         deadBulletIndices.add(i);
+                        pendingSfxRef.current = 'BRICK_HIT';
                         continue;
                     }
 
@@ -609,6 +817,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                         deadBulletIndices.add(i);
                         spawnParticles(baseRect.x + 16, baseRect.y + 16, '#ffe600', 30);
                         sound.playExplosion();
+                        pendingSfxRef.current = 'EXPLOSION';
                         gameStateRef.current = 'GAME_OVER';
                         setGameState('GAME_OVER');
                         continue;
@@ -625,6 +834,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                             deadBulletIndices.add(i);
                             spawnParticles(p1.x + 8, p1.y + 8, '#00f3ff', 20);
                             sound.playExplosion();
+                            pendingSfxRef.current = 'EXPLOSION';
                             p1LivesRef.current -= 1;
                             setP1Lives(p1LivesRef.current);
 
@@ -645,7 +855,8 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     }
 
                     // Hit Player 2 (Red)
-                    if (b.owner === 'ENEMY' && modeRef.current === 'LOCAL_2P' && p2.alive) {
+                    const is2Player = modeRef.current === 'LOCAL_2P' || modeRef.current === '2P_ONLINE';
+                    if (b.owner === 'ENEMY' && is2Player && p2.alive) {
                         if (
                             b.x < p2.x + p2.size &&
                             b.x + b.size > p2.x &&
@@ -655,6 +866,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                             deadBulletIndices.add(i);
                             spawnParticles(p2.x + 8, p2.y + 8, '#ff0055', 20);
                             sound.playExplosion();
+                            pendingSfxRef.current = 'EXPLOSION';
                             p2LivesRef.current -= 1;
                             setP2Lives(p2LivesRef.current);
 
@@ -693,6 +905,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                             const enemy = enemiesRef.current[hitEnemyIdx];
                             spawnParticles(enemy.x + 8, enemy.y + 8, '#b026ff', 20);
                             sound.playExplosion();
+                            pendingSfxRef.current = 'EXPLOSION';
                             enemiesRef.current.splice(hitEnemyIdx, 1);
                             deadBulletIndices.add(i);
 
@@ -701,6 +914,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                             recordScoreRef.current(scoreRef.current);
 
                             if (enemiesRef.current.length === 0 && remainingEnemiesRef.current <= 0) {
+                                pendingSfxRef.current = 'VICTORY';
                                 if (levelRef.current >= TOTAL_LEVELS) {
                                     gameStateRef.current = 'VICTORY';
                                     setGameState('VICTORY');
@@ -719,6 +933,49 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                 // Cleanly filter out expired bullets in one safe batch
                 if (deadBulletIndices.size > 0) {
                     bulletsRef.current = bulletsRef.current.filter((_, idx) => !deadBulletIndices.has(idx));
+                }
+
+            }
+
+            // Host State Synchronization at 30Hz (broadcasts both during PLAYING and GAME_OVER/VICTORY)
+            if (modeRef.current === '2P_ONLINE' && role === 'HOST') {
+                syncTickRef.current++;
+                if (syncTickRef.current % 2 === 0 || pendingSfxRef.current !== null) {
+                    const currentSfx = pendingSfxRef.current;
+                    pendingSfxRef.current = null;
+
+                    const deadBricks: number[] = [];
+                    for (let i = 0; i < bricksRef.current.length; i++) {
+                        if (!bricksRef.current[i].alive) deadBricks.push(i);
+                    }
+
+                    sendPacketRef.current({
+                        type: 'TANK_HOST_SYNC',
+                        p1: { x: p1Ref.current.x, y: p1Ref.current.y, dir: p1Ref.current.dir, alive: p1Ref.current.alive },
+                        p2: { x: p2Ref.current.x, y: p2Ref.current.y, dir: p2Ref.current.dir, alive: p2Ref.current.alive },
+                        enemies: enemiesRef.current.map((e) => ({
+                            x: e.x,
+                            y: e.y,
+                            dir: e.dir,
+                            alive: e.alive,
+                        })),
+                        bullets: bulletsRef.current.map((b) => ({
+                            x: b.x,
+                            y: b.y,
+                            dir: b.dir,
+                            owner: b.owner,
+                            color: b.color,
+                        })),
+                        deadBrickIndices: deadBricks,
+                        baseAlive: baseAliveRef.current,
+                        p1Lives: p1LivesRef.current,
+                        p2Lives: p2LivesRef.current,
+                        score: scoreRef.current,
+                        level: levelRef.current,
+                        gameState: gameStateRef.current,
+                        ping: ping ?? undefined,
+                        sfx: currentSfx ?? undefined,
+                    });
                 }
             }
 
@@ -783,7 +1040,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
 
             // Draw Players & Enemies
             if (p1Ref.current.alive) drawTank(p1Ref.current);
-            if (modeRef.current === 'LOCAL_2P' && p2Ref.current.alive) drawTank(p2Ref.current);
+            if ((modeRef.current === 'LOCAL_2P' || modeRef.current === '2P_ONLINE') && p2Ref.current.alive) drawTank(p2Ref.current);
             for (const e of enemiesRef.current) drawTank(e);
 
             // Bullets
@@ -819,6 +1076,114 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
         return () => cancelAnimationFrame(animId);
     }, [mode, initMap]);
 
+    // Online Lobby Modal
+    if (isLobbyOpen) {
+        return (
+            <div className="flex flex-col items-center max-w-lg mx-auto w-full p-6 bg-[#080d1a]/95 border border-cyan-500/40 backdrop-blur-md shadow-[0_0_30px_rgba(0,243,255,0.2)] select-none">
+                <div className="flex items-center gap-2 mb-2 text-cyan-400 font-arcade text-xs">
+                    <Globe className="w-4 h-4" /> WEBRTC_TANK_COOP_LINK
+                </div>
+                <h2 className="font-cyber font-bold text-2xl text-white tracking-wider glow-cyan mb-2">
+                    ONLINE CO-OP LOBBY
+                </h2>
+
+                {status === 'CONNECTED' ? (
+                    <div className="w-full text-center py-6">
+                        <div className="text-emerald-400 font-arcade text-sm mb-2">LINK ESTABLISHED</div>
+                        <p className="font-mono text-xs text-gray-400 mb-6">
+                            Connected as <span className="text-cyan-400 font-bold">{role === 'HOST' ? 'PLAYER 1 (CYAN - HOST)' : 'PLAYER 2 (RED - GUEST)'}</span>.
+                        </p>
+                        <button
+                            onClick={() => {
+                                sendPacketRef.current({ type: 'TANK_START_GAME' });
+                                setMode('2P_ONLINE');
+                                modeRef.current = '2P_ONLINE';
+                                setIsLobbyOpen(false);
+                                resetGame();
+                            }}
+                            className="px-6 py-2.5 bg-cyan-500 hover:bg-cyan-400 text-black font-arcade text-xs tracking-wider cursor-pointer shadow-[0_0_15px_rgba(0,243,255,0.4)]"
+                        >
+                            DEPLOY FORCES
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex flex-col gap-4 w-full my-4">
+                        {/* Host Section */}
+                        <div className="p-4 border border-cyan-500/30 bg-cyan-950/20 rounded">
+                            <div className="font-arcade text-xs text-cyan-300 mb-2">HOST CO-OP BATTLE</div>
+                            {role === 'HOST' && roomId ? (
+                                <div>
+                                    <p className="font-mono text-xs text-gray-400 mb-2">Share this Room Code with your ally:</p>
+                                    <div className="flex items-center gap-2">
+                                        <span className="font-mono text-lg font-bold text-yellow-300 tracking-wider bg-black/60 px-3 py-1 border border-yellow-500/40 flex-1 text-center">
+                                            {roomId}
+                                        </span>
+                                        <button
+                                            onClick={copyRoomCode}
+                                            className="px-3 py-2 border border-yellow-500/50 hover:bg-yellow-500/20 text-yellow-300 text-xs font-arcade cursor-pointer flex items-center gap-1"
+                                        >
+                                            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                        </button>
+                                    </div>
+                                    <div className="mt-3 text-[10px] font-mono text-cyan-400/80 animate-pulse">
+                                        Waiting for ally connection...
+                                    </div>
+                                </div>
+                            ) : (
+                                <button
+                                    onClick={createRoom}
+                                    className="w-full py-2 border border-cyan-500 hover:bg-cyan-500/20 text-cyan-300 font-arcade text-xs cursor-pointer transition-all"
+                                >
+                                    GENERATE ROOM CODE
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Join Section */}
+                        <div className="p-4 border border-pink-500/30 bg-pink-950/20 rounded">
+                            <div className="font-arcade text-xs text-pink-300 mb-2">JOIN CO-OP BATTLE</div>
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    placeholder="ENTER ROOM CODE"
+                                    value={joinInput}
+                                    onChange={(e) => setJoinInput(e.target.value)}
+                                    className="bg-black/60 border border-pink-500/40 text-pink-300 px-3 py-2 font-mono text-xs uppercase focus:outline-none flex-1"
+                                />
+                                <button
+                                    onClick={() => {
+                                        sound.playBlip(700); // Resumes Web AudioContext on guest gesture
+                                        joinRoom(joinInput);
+                                    }}
+                                    disabled={!joinInput.trim() || status === 'CONNECTING'}
+                                    className="px-4 py-2 bg-pink-500/20 hover:bg-pink-500 text-pink-300 hover:text-black border border-pink-500 font-arcade text-xs cursor-pointer disabled:opacity-50"
+                                >
+                                    {status === 'CONNECTING' ? 'CONNECTING...' : 'JOIN'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {errorMsg && (
+                            <div className="font-mono text-xs text-red-400 bg-red-950/30 p-2 border border-red-500/40">
+                                {errorMsg}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                <button
+                    onClick={() => {
+                        disconnect();
+                        setIsLobbyOpen(false);
+                    }}
+                    className="mt-4 flex items-center gap-1.5 px-4 py-2 border border-gray-700 text-xs font-arcade text-gray-400 hover:text-white cursor-pointer"
+                >
+                    <ArrowLeft className="w-3.5 h-3.5" /> BACK TO SELECTOR
+                </button>
+            </div>
+        );
+    }
+
     // Initial Engagement Mode Selector
     if (!mode) {
         return (
@@ -830,19 +1195,38 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     SELECT ENGAGEMENT
                 </h2>
                 <p className="font-mono text-xs text-gray-400 text-center mb-6">
-                    Defend the core eagle matrix. Play solo or mobilize in split-keyboard co-op.
+                    Defend the core eagle matrix. Play solo, local split-keyboard, or join via P2P online.
                 </p>
+
+                {/* Online 2P Co-op */}
+                <button
+                    onClick={() => {
+                        sound.playBlip(750);
+                        setIsLobbyOpen(true);
+                    }}
+                    className="w-full p-4 mb-3 border border-cyan-500/60 hover:border-cyan-400 bg-cyan-950/30 hover:bg-cyan-950/60 text-cyan-300 transition-all cursor-pointer group text-left shadow-[0_0_20px_rgba(0,243,255,0.2)]"
+                >
+                    <div className="flex justify-between items-center mb-1">
+                        <span className="font-arcade text-sm font-bold tracking-wider flex items-center gap-2">
+                            <Globe className="w-4 h-4 text-cyan-400" /> ONLINE 2P CO-OP (P2P)
+                        </span>
+                        <span className="font-mono text-[10px] text-cyan-400">ROOM CODE</span>
+                    </div>
+                    <div className="font-mono text-xs text-gray-400 group-hover:text-gray-200">
+                        Direct WebRTC connection with a remote ally across the web.
+                    </div>
+                </button>
 
                 {/* 1-Player Solo Mode */}
                 <button
                     onClick={() => selectMode('SOLO')}
-                    className="w-full p-4 mb-3 border border-cyan-500/50 hover:border-cyan-400 bg-cyan-950/20 hover:bg-cyan-950/40 text-cyan-300 transition-all cursor-pointer group text-left shadow-[0_0_15px_rgba(0,243,255,0.15)]"
+                    className="w-full p-4 mb-3 border border-yellow-500/50 hover:border-yellow-400 bg-yellow-950/20 hover:bg-yellow-950/40 text-yellow-300 transition-all cursor-pointer group text-left shadow-[0_0_15px_rgba(255,230,0,0.15)]"
                 >
                     <div className="flex justify-between items-center mb-1">
                         <span className="font-arcade text-sm font-bold tracking-wider flex items-center gap-2">
-                            <User className="w-4 h-4 text-cyan-400" /> 1-PLAYER SOLO
+                            <User className="w-4 h-4 text-yellow-400" /> 1-PLAYER SOLO
                         </span>
-                        <span className="font-mono text-[10px] text-cyan-400">DEFEND BASE</span>
+                        <span className="font-mono text-[10px] text-yellow-400">DEFEND BASE</span>
                     </div>
                     <div className="font-mono text-xs text-gray-400 group-hover:text-gray-200">
                         Player 1 (Cyan): [W/A/S/D] or [ARROWS] + [SPACE] to fire.
@@ -887,6 +1271,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     <button
                         onClick={() => {
                             sound.playBlip(300);
+                            disconnect();
                             onExit();
                         }}
                         className="flex items-center gap-1.5 px-3 py-1 border border-pink-500/50 hover:bg-pink-500/20 text-[#ff007f] cursor-pointer"
@@ -897,14 +1282,40 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     <button
                         onClick={() => {
                             sound.playBlip(400);
+                            disconnect();
                             setMode(null);
                         }}
                         className="flex items-center gap-1.5 px-2.5 py-1 border border-cyan-500/40 hover:bg-cyan-500/20 text-[10px] text-cyan-300 cursor-pointer shadow-[0_0_10px_rgba(0,243,255,0.15)]"
                         title="Change Engagement Mode"
                     >
                         <Sliders className="w-3 h-3" />
-                        <span>{mode === 'SOLO' ? '1P SOLO' : '2P LOCAL'}</span>
+                        <span>
+                            {mode === '2P_ONLINE'
+                                ? `ONLINE (${role})`
+                                : mode === 'LOCAL_2P'
+                                    ? '2P LOCAL'
+                                    : '1P SOLO'}
+                        </span>
                     </button>
+
+                    {/* Ping Badge */}
+                    {mode === '2P_ONLINE' && status === 'CONNECTED' && (
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 border border-cyan-500/30 bg-black/60 rounded text-[10px] font-mono">
+                            <span
+                                className={`w-1.5 h-1.5 rounded-full ${ping === null
+                                    ? 'bg-yellow-400 animate-ping'
+                                    : ping < 60
+                                        ? 'bg-emerald-400 shadow-[0_0_8px_#39ff14]'
+                                        : ping < 130
+                                            ? 'bg-yellow-400'
+                                            : 'bg-red-400'
+                                    }`}
+                            />
+                            <span className="text-gray-300 font-bold">
+                                {ping !== null ? `${ping}ms` : 'PINGING...'}
+                            </span>
+                        </div>
+                    )}
                 </div>
 
                 {/* Right Status / Telemetry Chips */}
@@ -921,7 +1332,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     {/* Lives Counter */}
                     <div className="flex items-center gap-1.5">
                         <span className="text-cyan-400 font-bold">P1: {p1Lives}</span>
-                        {mode === 'LOCAL_2P' && (
+                        {(mode === 'LOCAL_2P' || mode === '2P_ONLINE') && (
                             <>
                                 <span className="text-gray-600">|</span>
                                 <span className="text-red-500 font-bold">P2: {p2Lives}</span>
@@ -971,10 +1382,40 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                         </p>
                         <p className="font-arcade text-xs text-gray-400 mb-6">FINAL SCORE: {score}</p>
                         <button
-                            onClick={resetGame}
+                            onClick={() => {
+                                sound.playBlip(550);
+                                if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                    sendPacketRef.current({ type: 'TANK_RESTART_REQUEST' });
+                                } else {
+                                    resetGame();
+                                }
+                            }}
                             className="flex items-center gap-2 px-4 py-2 border border-yellow-400 bg-yellow-500/20 text-yellow-300 hover:bg-yellow-400 hover:text-black font-arcade text-xs cursor-pointer shadow-[0_0_15px_rgba(255,230,0,0.3)]"
                         >
                             <RotateCcw className="w-4 h-4" /> PLAY AGAIN [R]
+                        </button>
+                    </div>
+                )}
+
+                {/* Opponent Disconnected Modal Overlay */}
+                {mode === '2P_ONLINE' && peerDisconnected && gameState === 'PLAYING' && (
+                    <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm z-30">
+                        <div className="w-3 h-3 rounded-full bg-red-500 animate-ping mb-3" />
+                        <p className="font-cyber font-black text-xl text-red-500 drop-shadow-[0_0_10px_#ff0055] tracking-wider mb-2">
+                            OPPONENT DISCONNECTED
+                        </p>
+                        <p className="font-arcade text-xs text-gray-400 mb-6">
+                            THE REMOTE PEER HAS SEVERED THE DATA CONNECTION.
+                        </p>
+                        <button
+                            onClick={() => {
+                                sound.playBlip(400);
+                                disconnect();
+                                setMode(null);
+                            }}
+                            className="px-5 py-2.5 border border-cyan-400 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-400 hover:text-black font-arcade text-xs cursor-pointer shadow-[0_0_15px_rgba(0,243,255,0.4)]"
+                        >
+                            RETURN TO SELECTOR
                         </button>
                     </div>
                 )}
@@ -986,9 +1427,42 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                 <div className="grid grid-cols-3 gap-2 w-44">
                     <div />
                     <button
-                        onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Up = true; }}
-                        onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Up = false; }}
-                        className="h-14 w-14 flex items-center justify-center border-2 border-cyan-500/60 bg-cyan-950/60 text-cyan-200 text-lg rounded-lg active:bg-cyan-400 active:text-black transition-colors shadow-[0_0_12px_rgba(0,243,255,0.2)] touch-control"
+                        onTouchStart={(e) => {
+                            e.preventDefault();
+                            if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                keysRef.current.p2Up = true;
+                                sendPacketRef.current({
+                                    type: 'TANK_GUEST_INPUT',
+                                    up: true,
+                                    down: false,
+                                    left: false,
+                                    right: false,
+                                    fire: keysRef.current.p2Fire,
+                                });
+                            } else {
+                                keysRef.current.p1Up = true;
+                            }
+                        }}
+                        onTouchEnd={(e) => {
+                            e.preventDefault();
+                            if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                keysRef.current.p2Up = false;
+                                sendPacketRef.current({
+                                    type: 'TANK_GUEST_INPUT',
+                                    up: false,
+                                    down: keysRef.current.p2Down,
+                                    left: keysRef.current.p2Left,
+                                    right: keysRef.current.p2Right,
+                                    fire: keysRef.current.p2Fire,
+                                });
+                            } else {
+                                keysRef.current.p1Up = false;
+                            }
+                        }}
+                        className={`h-14 w-14 flex items-center justify-center border-2 ${mode === '2P_ONLINE' && role === 'GUEST'
+                            ? 'border-red-500/60 bg-red-950/60 text-red-200 active:bg-red-500 shadow-[0_0_12px_rgba(255,0,85,0.2)]'
+                            : 'border-cyan-500/60 bg-cyan-950/60 text-cyan-200 active:bg-cyan-400 shadow-[0_0_12px_rgba(0,243,255,0.2)]'
+                            } text-lg rounded-lg active:text-black transition-colors touch-control`}
                         aria-label="Move Up"
                     >
                         ▲
@@ -996,25 +1470,124 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     <div />
 
                     <button
-                        onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Left = true; }}
-                        onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Left = false; }}
-                        className="h-14 w-14 flex items-center justify-center border-2 border-cyan-500/60 bg-cyan-950/60 text-cyan-200 text-lg rounded-lg active:bg-cyan-400 active:text-black transition-colors shadow-[0_0_12px_rgba(0,243,255,0.2)] touch-control"
+                        onTouchStart={(e) => {
+                            e.preventDefault();
+                            if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                keysRef.current.p2Left = true;
+                                sendPacketRef.current({
+                                    type: 'TANK_GUEST_INPUT',
+                                    up: false,
+                                    down: false,
+                                    left: true,
+                                    right: false,
+                                    fire: keysRef.current.p2Fire,
+                                });
+                            } else {
+                                keysRef.current.p1Left = true;
+                            }
+                        }}
+                        onTouchEnd={(e) => {
+                            e.preventDefault();
+                            if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                keysRef.current.p2Left = false;
+                                sendPacketRef.current({
+                                    type: 'TANK_GUEST_INPUT',
+                                    up: keysRef.current.p2Up,
+                                    down: keysRef.current.p2Down,
+                                    left: false,
+                                    right: keysRef.current.p2Right,
+                                    fire: keysRef.current.p2Fire,
+                                });
+                            } else {
+                                keysRef.current.p1Left = false;
+                            }
+                        }}
+                        className={`h-14 w-14 flex items-center justify-center border-2 ${mode === '2P_ONLINE' && role === 'GUEST'
+                            ? 'border-red-500/60 bg-red-950/60 text-red-200 active:bg-red-500 shadow-[0_0_12px_rgba(255,0,85,0.2)]'
+                            : 'border-cyan-500/60 bg-cyan-950/60 text-cyan-200 active:bg-cyan-400 shadow-[0_0_12px_rgba(0,243,255,0.2)]'
+                            } text-lg rounded-lg active:text-black transition-colors touch-control`}
                         aria-label="Move Left"
                     >
                         ◀
                     </button>
                     <button
-                        onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Down = true; }}
-                        onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Down = false; }}
-                        className="h-14 w-14 flex items-center justify-center border-2 border-cyan-500/60 bg-cyan-950/60 text-cyan-200 text-lg rounded-lg active:bg-cyan-400 active:text-black transition-colors shadow-[0_0_12px_rgba(0,243,255,0.2)] touch-control"
+                        onTouchStart={(e) => {
+                            e.preventDefault();
+                            if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                keysRef.current.p2Down = true;
+                                sendPacketRef.current({
+                                    type: 'TANK_GUEST_INPUT',
+                                    up: false,
+                                    down: true,
+                                    left: false,
+                                    right: false,
+                                    fire: keysRef.current.p2Fire,
+                                });
+                            } else {
+                                keysRef.current.p1Down = true;
+                            }
+                        }}
+                        onTouchEnd={(e) => {
+                            e.preventDefault();
+                            if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                keysRef.current.p2Down = false;
+                                sendPacketRef.current({
+                                    type: 'TANK_GUEST_INPUT',
+                                    up: keysRef.current.p2Up,
+                                    down: false,
+                                    left: keysRef.current.p2Left,
+                                    right: keysRef.current.p2Right,
+                                    fire: keysRef.current.p2Fire,
+                                });
+                            } else {
+                                keysRef.current.p1Down = false;
+                            }
+                        }}
+                        className={`h-14 w-14 flex items-center justify-center border-2 ${mode === '2P_ONLINE' && role === 'GUEST'
+                            ? 'border-red-500/60 bg-red-950/60 text-red-200 active:bg-red-500 shadow-[0_0_12px_rgba(255,0,85,0.2)]'
+                            : 'border-cyan-500/60 bg-cyan-950/60 text-cyan-200 active:bg-cyan-400 shadow-[0_0_12px_rgba(0,243,255,0.2)]'
+                            } text-lg rounded-lg active:text-black transition-colors touch-control`}
                         aria-label="Move Down"
                     >
                         ▼
                     </button>
                     <button
-                        onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Right = true; }}
-                        onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Right = false; }}
-                        className="h-14 w-14 flex items-center justify-center border-2 border-cyan-500/60 bg-cyan-950/60 text-cyan-200 text-lg rounded-lg active:bg-cyan-400 active:text-black transition-colors shadow-[0_0_12px_rgba(0,243,255,0.2)] touch-control"
+                        onTouchStart={(e) => {
+                            e.preventDefault();
+                            if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                keysRef.current.p2Right = true;
+                                sendPacketRef.current({
+                                    type: 'TANK_GUEST_INPUT',
+                                    up: false,
+                                    down: false,
+                                    left: false,
+                                    right: true,
+                                    fire: keysRef.current.p2Fire,
+                                });
+                            } else {
+                                keysRef.current.p1Right = true;
+                            }
+                        }}
+                        onTouchEnd={(e) => {
+                            e.preventDefault();
+                            if (mode === '2P_ONLINE' && role === 'GUEST') {
+                                keysRef.current.p2Right = false;
+                                sendPacketRef.current({
+                                    type: 'TANK_GUEST_INPUT',
+                                    up: keysRef.current.p2Up,
+                                    down: keysRef.current.p2Down,
+                                    left: keysRef.current.p2Left,
+                                    right: false,
+                                    fire: keysRef.current.p2Fire,
+                                });
+                            } else {
+                                keysRef.current.p1Right = false;
+                            }
+                        }}
+                        className={`h-14 w-14 flex items-center justify-center border-2 ${mode === '2P_ONLINE' && role === 'GUEST'
+                            ? 'border-red-500/60 bg-red-950/60 text-red-200 active:bg-red-500 shadow-[0_0_12px_rgba(255,0,85,0.2)]'
+                            : 'border-cyan-500/60 bg-cyan-950/60 text-cyan-200 active:bg-cyan-400 shadow-[0_0_12px_rgba(0,243,255,0.2)]'
+                            } text-lg rounded-lg active:text-black transition-colors touch-control`}
                         aria-label="Move Right"
                     >
                         ▶
@@ -1023,9 +1596,42 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
 
                 {/* Primary Fire Button */}
                 <button
-                    onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Fire = true; }}
-                    onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Fire = false; }}
-                    className="w-24 h-24 flex items-center justify-center border-2 border-cyan-400 bg-cyan-950/60 text-cyan-300 font-arcade text-sm font-bold rounded-2xl active:bg-cyan-400 active:text-black shadow-[0_0_20px_rgba(0,243,255,0.35)] transition-all touch-control"
+                    onTouchStart={(e) => {
+                        e.preventDefault();
+                        if (mode === '2P_ONLINE' && role === 'GUEST') {
+                            keysRef.current.p2Fire = true;
+                            sendPacketRef.current({
+                                type: 'TANK_GUEST_INPUT',
+                                up: keysRef.current.p2Up,
+                                down: keysRef.current.p2Down,
+                                left: keysRef.current.p2Left,
+                                right: keysRef.current.p2Right,
+                                fire: true,
+                            });
+                        } else {
+                            keysRef.current.p1Fire = true;
+                        }
+                    }}
+                    onTouchEnd={(e) => {
+                        e.preventDefault();
+                        if (mode === '2P_ONLINE' && role === 'GUEST') {
+                            keysRef.current.p2Fire = false;
+                            sendPacketRef.current({
+                                type: 'TANK_GUEST_INPUT',
+                                up: keysRef.current.p2Up,
+                                down: keysRef.current.p2Down,
+                                left: keysRef.current.p2Left,
+                                right: keysRef.current.p2Right,
+                                fire: false,
+                            });
+                        } else {
+                            keysRef.current.p1Fire = false;
+                        }
+                    }}
+                    className={`w-24 h-24 flex items-center justify-center border-2 ${mode === '2P_ONLINE' && role === 'GUEST'
+                        ? 'border-red-400 bg-red-950/60 text-red-300 active:bg-red-500 shadow-[0_0_20px_rgba(255,0,85,0.35)]'
+                        : 'border-cyan-400 bg-cyan-950/60 text-cyan-300 active:bg-cyan-400 shadow-[0_0_20px_rgba(0,243,255,0.35)]'
+                        } font-arcade text-sm font-bold rounded-2xl active:text-black transition-all touch-control`}
                     aria-label="Fire Cannon"
                 >
                     FIRE

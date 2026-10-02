@@ -66,6 +66,64 @@ export interface PongResponsePacket {
     timestamp: number;
 }
 
+// --- BATTLE TANK PACKETS ---
+export interface TankNetworkEntity {
+    x: number;
+    y: number;
+    dir: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+    alive: boolean;
+}
+
+export interface TankNetworkBullet {
+    x: number;
+    y: number;
+    dir: 'UP' | 'DOWN' | 'LEFT' | 'RIGHT';
+    owner: 'P1' | 'P2' | 'ENEMY';
+    color: string;
+}
+
+export type TankSoundEvent =
+    | 'FIRE_P1'
+    | 'FIRE_P2'
+    | 'FIRE_ENEMY'
+    | 'BRICK_HIT'
+    | 'EXPLOSION'
+    | 'VICTORY';
+
+export interface TankHostStatePacket {
+    type: 'TANK_HOST_SYNC';
+    p1: TankNetworkEntity;
+    p2: TankNetworkEntity;
+    enemies: TankNetworkEntity[];
+    bullets: TankNetworkBullet[];
+    deadBrickIndices: number[]; // Compressed indices of destroyed bricks
+    baseAlive: boolean;
+    p1Lives: number;
+    p2Lives: number;
+    score: number;
+    level: number;
+    gameState: 'PLAYING' | 'LEVEL_CLEARED' | 'VICTORY' | 'GAME_OVER';
+    ping?: number;
+    sfx?: TankSoundEvent;
+}
+
+export interface TankGuestInputPacket {
+    type: 'TANK_GUEST_INPUT';
+    up: boolean;
+    down: boolean;
+    left: boolean;
+    right: boolean;
+    fire: boolean;
+}
+
+export interface TankStartGamePacket {
+    type: 'TANK_START_GAME';
+}
+
+export interface TankRestartRequestPacket {
+    type: 'TANK_RESTART_REQUEST';
+}
+
 export type ArcadeNetworkPacket =
     | PongHostStatePacket
     | PongGuestInputPacket
@@ -73,10 +131,13 @@ export type ArcadeNetworkPacket =
     | SlimeHostStatePacket
     | SlimeGuestInputPacket
     | SlimeStartGamePacket
+    | TankHostStatePacket
+    | TankGuestInputPacket
+    | TankStartGamePacket
+    | TankRestartRequestPacket
     | PingPacket
     | PongResponsePacket;
 
-// Keep alias for Pong backward compatibility
 export type PongNetworkPacket = ArcadeNetworkPacket;
 export type SlimeNetworkPacket = ArcadeNetworkPacket;
-
+export type TankNetworkPacket = ArcadeNetworkPacket;
