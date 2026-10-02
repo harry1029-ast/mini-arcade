@@ -67,9 +67,14 @@ export function usePeerRoom<TPacket>(onDataReceived?: (data: TPacket) => void) {
                     setStatus('CONNECTED');
                 });
 
-                conn.on('data', (data) => {
-                    if (dataHandlerRef.current) {
-                        dataHandlerRef.current(data as TPacket);
+                conn.on('data', (data: any) => {
+                    try {
+                        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+                        if (dataHandlerRef.current) {
+                            dataHandlerRef.current(parsed as TPacket);
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse peer packet:', e);
                     }
                 });
 
@@ -114,8 +119,11 @@ export function usePeerRoom<TPacket>(onDataReceived?: (data: TPacket) => void) {
             peer.on('open', () => {
                 setStatus('CONNECTING');
                 const formattedId = targetRoomId.trim().toUpperCase();
+
+                // Set serialization explicitly to json
                 const conn = peer.connect(formattedId, {
                     reliable: true,
+                    serialization: 'json',
                 });
                 connectionRef.current = conn;
 
@@ -124,9 +132,14 @@ export function usePeerRoom<TPacket>(onDataReceived?: (data: TPacket) => void) {
                     setStatus('CONNECTED');
                 });
 
-                conn.on('data', (data) => {
-                    if (dataHandlerRef.current) {
-                        dataHandlerRef.current(data as TPacket);
+                conn.on('data', (data: any) => {
+                    try {
+                        const parsed = typeof data === 'string' ? JSON.parse(data) : data;
+                        if (dataHandlerRef.current) {
+                            dataHandlerRef.current(parsed as TPacket);
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse peer packet:', e);
                     }
                 });
 

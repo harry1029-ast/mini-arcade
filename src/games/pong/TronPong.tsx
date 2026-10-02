@@ -117,82 +117,6 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
 
   const currentDiffRef = useRef<PongDifficultyConfig>(DIFFICULTY_CONFIGS.MEDIUM);
 
-  // P2P Data Handler
-  const handleNetworkData = useCallback((data: PongNetworkPacket) => {
-    if (data.type === 'PING') {
-      // Immediate pong echo back to sender
-      sendPacketRef.current({ type: 'PONG_REPLY', timestamp: data.timestamp });
-    } else if (data.type === 'PONG_REPLY') {
-      const rtt = Math.round(performance.now() - data.timestamp);
-      setPing(Math.max(1, Math.round(rtt / 2)));
-    } else if (data.type === 'PONG_GUEST_INPUT') {
-      keysRef.current.p2Up = data.up;
-      keysRef.current.p2Down = data.down;
-      if (typeof data.directY === 'number') {
-        p2Ref.current.y = data.directY;
-      }
-    } else if (data.type === 'PONG_HOST_SYNC') {
-      ballRef.current.x = data.ball.x;
-      ballRef.current.y = data.ball.y;
-      ballRef.current.vx = data.ball.vx;
-      ballRef.current.vy = data.ball.vy;
-      p1Ref.current.y = data.p1Y;
-      p1ScoreRef.current = data.playerScore;
-      p2ScoreRef.current = data.p2Score;
-      setPlayerScore(data.playerScore);
-      setP2Score(data.p2Score);
-
-      if (data.winner && !winnerRef.current) {
-        winnerRef.current = data.winner;
-        setWinner(data.winner);
-      }
-    }
-  }, []);
-
-  const { role, roomId, status, errorMsg, sendPacket, createRoom, joinRoom, disconnect } =
-    usePeerRoom<PongNetworkPacket>(handleNetworkData);
-
-  // Keep ref up to date
-  sendPacketRef.current = sendPacket;
-
-  // Heartbeat ping loop: measures latency every 2 seconds when connected
-  useEffect(() => {
-    if (mode !== '2P_ONLINE' || status !== 'CONNECTED') {
-      setPing(null);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      sendPacketRef.current({
-        type: 'PING',
-        timestamp: performance.now(),
-      });
-    }, 2000);
-
-    // Initial ping
-    sendPacketRef.current({
-      type: 'PING',
-      timestamp: performance.now(),
-    });
-
-    return () => clearInterval(interval);
-  }, [mode, status]);
-
-  const spawnParticles = (x: number, y: number, color: string) => {
-    for (let i = 0; i < 12; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 3 + 1;
-      particlesRef.current.push({
-        x,
-        y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        alpha: 1,
-        color,
-      });
-    }
-  };
-
   const resetBall = useCallback((towardP1: boolean) => {
     const config = currentDiffRef.current;
     const baseSpeed = modeRef.current === '1P_AI' ? config.initialBallSpeed : 5.5;
@@ -220,6 +144,86 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
     p2Ref.current.y = HEIGHT / 2 - PADDLE_HEIGHT / 2;
     resetBall(Math.random() > 0.5);
   }, [resetBall]);
+
+  // P2P Data Handler
+  // P2P Data Handler
+  const handleNetworkData = useCallback((data: PongNetworkPacket) => {
+    if (data.type === 'PONG_START_GAME') {
+      // Remote player initiated the match
+      setMode('2P_ONLINE');
+      setDifficulty('MEDIUM');
+      setIsLobbyOpen(false);
+      resetMatch();
+    } else if (data.type === 'PING') {
+      // Echo immediately back to sender
+      sendPacketRef.current({ type: 'PONG_REPLY', timestamp: data.timestamp });
+    } else if (data.type === 'PONG_REPLY') {
+      // Measure RTT against this device's current clock
+      const rtt = Math.max(1, Math.round(performance.now() - data.timestamp));
+      setPing(Math.round(rtt / 2));
+    } else if (data.type === 'PONG_GUEST_INPUT') {
+      keysRef.current.p2Up = data.up;
+      keysRef.current.p2Down = data.down;
+      if (typeof data.directY === 'number') {
+        p2Ref.current.y = data.directY;
+      }
+    } else if (data.type === 'PONG_HOST_SYNC') {
+      ballRef.current.x = data.ball.x;
+      ballRef.current.y = data.ball.y;
+      ballRef.current.vx = data.ball.vx;
+      ballRef.current.vy = data.ball.vy;
+      p1Ref.current.y = data.p1Y;
+      p1ScoreRef.current = data.playerScore;
+      p2ScoreRef.current = data.p2Score;
+      setPlayerScore(data.playerScore);
+      setP2Score(data.p2Score);
+
+      if (data.ping !== undefined) {
+        setPing(data.ping);
+      }
+
+      if (data.winner && !winnerRef.current) {
+        winnerRef.current = data.winner;
+        setWinner(data.winner);
+      }
+    }
+  }, [resetMatch]);
+
+  const { role, roomId, status, errorMsg, sendPacket, createRoom, joinRoom, disconnect } =
+    usePeerRoom<PongNetworkPacket>(handleNetworkData);
+
+  // Keep ref up to date
+  sendPacketRef.current = sendPacket;
+
+  // Heartbeat ping loop: measures latency every 2 seconds when connected
+  // Host measures ping and broadcasts state
+  useEffect(() => {
+    if (status !== 'CONNECTED' || role !== 'HOST') return;
+
+    const interval = setInterval(() => {
+      sendPacketRef.current({
+        type: 'PING',
+        timestamp: performance.now(),
+      });
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [status, role]);
+
+  const spawnParticles = (x: number, y: number, color: string) => {
+    for (let i = 0; i < 12; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 3 + 1;
+      particlesRef.current.push({
+        x,
+        y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        alpha: 1,
+        color,
+      });
+    }
+  };
 
   const startWithDifficulty = (selected: PongDifficulty) => {
     sound.playBlip(750);
@@ -488,6 +492,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
                 playerScore: p1ScoreRef.current,
                 p2Score: p2ScoreRef.current,
                 winner: winnerRef.current,
+                ping: ping ?? undefined,
               });
             }
           }
@@ -618,6 +623,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
             </p>
             <button
               onClick={() => {
+                sendPacketRef.current({ type: 'PONG_START_GAME' });
                 setMode('2P_ONLINE');
                 setDifficulty('MEDIUM');
                 setIsLobbyOpen(false);
@@ -842,20 +848,20 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
             </button>
           </div>
 
-          {/* Network Ping Indicator (Online Mode Only) */}
-          {mode === '2P_ONLINE' && (
-            <div className="flex items-center gap-1 px-2 py-0.5 border border-gray-800 bg-black/60 rounded text-[10px] font-mono">
+          {/* Network Ping Indicator: Shows whenever connected to a peer */}
+          {status === 'CONNECTED' && (
+            <div className="flex items-center gap-1.5 px-2 py-0.5 border border-cyan-500/30 bg-black/60 rounded text-[10px] font-mono">
               <span
                 className={`w-1.5 h-1.5 rounded-full ${ping === null
-                  ? 'bg-yellow-400'
+                  ? 'bg-yellow-400 animate-ping'
                   : ping < 60
-                    ? 'bg-emerald-400 animate-pulse'
+                    ? 'bg-emerald-400 shadow-[0_0_8px_#39ff14]'
                     : ping < 130
                       ? 'bg-yellow-400'
                       : 'bg-red-400'
                   }`}
               />
-              <span className="text-gray-400">
+              <span className="text-gray-300 font-bold">
                 {ping !== null ? `${ping}ms` : 'PINGING...'}
               </span>
             </div>

@@ -1,5 +1,4 @@
 // src/types/network.ts
-
 export interface PongHostStatePacket {
     type: 'PONG_HOST_SYNC';
     ball: {
@@ -12,6 +11,7 @@ export interface PongHostStatePacket {
     playerScore: number;
     p2Score: number;
     winner: 'P1' | 'P2' | null;
+    ping?: number;
 }
 
 export interface PongGuestInputPacket {
@@ -31,8 +31,13 @@ export interface PongResponsePacket {
     timestamp: number;
 }
 
+export interface StartGamePacket {
+    type: 'PONG_START_GAME';
+}
+
 export type PongNetworkPacket =
     | PongHostStatePacket
     | PongGuestInputPacket
     | PingPacket
-    | PongResponsePacket;
+    | PongResponsePacket
+    | StartGamePacket;
