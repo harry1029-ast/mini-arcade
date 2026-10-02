@@ -1,6 +1,6 @@
 // src/games/pong/types.ts
 
-export type PongMode = '1P_AI' | '2P_LOCAL';
+export type PongMode = '1P_AI' | '2P_LOCAL' | '2P_ONLINE';
 export type PongDifficulty = 'EASY' | 'MEDIUM' | 'HARD';
 
 export interface PongDifficultyConfig {

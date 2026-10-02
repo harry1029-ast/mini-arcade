@@ -11,5 +11,6 @@ export default defineConfig({
   server: {
     host: true, // Listens on 0.0.0.0 (all network interfaces)
     port: 5173,
+    allowedHosts: true,
   },
 });
