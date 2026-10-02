@@ -880,9 +880,10 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
 
     return (
         <div className="flex flex-col items-center max-w-xl mx-auto w-full select-none">
-            {/* Top HUD */}
-            <div className="w-full mb-3 px-1 flex items-center justify-between font-arcade text-xs">
-                <div className="flex items-center gap-2">
+            {/* Responsive Top HUD */}
+            <div className="w-full mb-3 px-1 flex flex-col gap-2 sm:gap-0 sm:flex-row sm:items-center sm:justify-between font-arcade text-xs">
+                {/* Left Action Buttons */}
+                <div className="flex items-center justify-between sm:justify-start gap-2">
                     <button
                         onClick={() => {
                             sound.playBlip(300);
@@ -898,7 +899,7 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                             sound.playBlip(400);
                             setMode(null);
                         }}
-                        className="flex items-center gap-1 px-2.5 py-1 border border-cyan-500/40 hover:bg-cyan-500/20 text-[10px] text-cyan-300 cursor-pointer"
+                        className="flex items-center gap-1.5 px-2.5 py-1 border border-cyan-500/40 hover:bg-cyan-500/20 text-[10px] text-cyan-300 cursor-pointer shadow-[0_0_10px_rgba(0,243,255,0.15)]"
                         title="Change Engagement Mode"
                     >
                         <Sliders className="w-3 h-3" />
@@ -906,8 +907,9 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                     </button>
                 </div>
 
-                <div className="flex items-center gap-4 text-[11px]">
-                    <div className="flex items-center gap-1 text-emerald-400">
+                {/* Right Status / Telemetry Chips */}
+                <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 text-[11px] bg-[#080d1a]/60 px-2.5 py-1.5 border border-cyan-500/20 sm:border-0 sm:bg-transparent rounded">
+                    <div className="flex items-center gap-1 px-1.5 py-0.5 border border-emerald-500/40 bg-emerald-950/30 rounded text-emerald-400">
                         <span>LVL {currentLevel}/{TOTAL_LEVELS}</span>
                     </div>
 
@@ -916,18 +918,18 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                         <span>{enemiesRemaining + enemiesRef.current.length}</span>
                     </div>
 
-                    {/* Lives display */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-cyan-400">P1: {p1Lives}</span>
+                    {/* Lives Counter */}
+                    <div className="flex items-center gap-1.5">
+                        <span className="text-cyan-400 font-bold">P1: {p1Lives}</span>
                         {mode === 'LOCAL_2P' && (
                             <>
                                 <span className="text-gray-600">|</span>
-                                <span className="text-red-500">P2: {p2Lives}</span>
+                                <span className="text-red-500 font-bold">P2: {p2Lives}</span>
                             </>
                         )}
                     </div>
 
-                    <div className="text-white">PTS: {score}</div>
+                    <div className="text-white font-mono">PTS: {score}</div>
                 </div>
             </div>
 
@@ -978,45 +980,53 @@ const BattleTankComponent: React.FC<BattleTankProps> = ({ onExit }) => {
                 )}
             </div>
 
-            {/* Mobile Touch Controls */}
-            <div className="flex items-center justify-between w-full max-w-xs mt-4 px-2 md:hidden touch-control">
-                <div className="grid grid-cols-3 gap-1">
+            {/* Mobile Touch Controls - Expanded Ergonomic Layout */}
+            <div className="flex items-center justify-between w-full max-w-md mt-6 px-4 md:hidden touch-control select-none">
+                {/* 4-Way Cardinal D-Pad */}
+                <div className="grid grid-cols-3 gap-2 w-44">
                     <div />
                     <button
                         onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Up = true; }}
                         onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Up = false; }}
-                        className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs rounded active:bg-cyan-400 active:text-black touch-control"
+                        className="h-14 w-14 flex items-center justify-center border-2 border-cyan-500/60 bg-cyan-950/60 text-cyan-200 text-lg rounded-lg active:bg-cyan-400 active:text-black transition-colors shadow-[0_0_12px_rgba(0,243,255,0.2)] touch-control"
+                        aria-label="Move Up"
                     >
                         ▲
                     </button>
                     <div />
+
                     <button
                         onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Left = true; }}
                         onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Left = false; }}
-                        className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs rounded active:bg-cyan-400 active:text-black touch-control"
+                        className="h-14 w-14 flex items-center justify-center border-2 border-cyan-500/60 bg-cyan-950/60 text-cyan-200 text-lg rounded-lg active:bg-cyan-400 active:text-black transition-colors shadow-[0_0_12px_rgba(0,243,255,0.2)] touch-control"
+                        aria-label="Move Left"
                     >
                         ◀
                     </button>
                     <button
                         onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Down = true; }}
                         onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Down = false; }}
-                        className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs rounded active:bg-cyan-400 active:text-black touch-control"
+                        className="h-14 w-14 flex items-center justify-center border-2 border-cyan-500/60 bg-cyan-950/60 text-cyan-200 text-lg rounded-lg active:bg-cyan-400 active:text-black transition-colors shadow-[0_0_12px_rgba(0,243,255,0.2)] touch-control"
+                        aria-label="Move Down"
                     >
                         ▼
                     </button>
                     <button
                         onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Right = true; }}
                         onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Right = false; }}
-                        className="p-3 border border-cyan-500/40 bg-cyan-950/40 text-cyan-300 font-arcade text-xs rounded active:bg-cyan-400 active:text-black touch-control"
+                        className="h-14 w-14 flex items-center justify-center border-2 border-cyan-500/60 bg-cyan-950/60 text-cyan-200 text-lg rounded-lg active:bg-cyan-400 active:text-black transition-colors shadow-[0_0_12px_rgba(0,243,255,0.2)] touch-control"
+                        aria-label="Move Right"
                     >
                         ▶
                     </button>
                 </div>
 
+                {/* Primary Fire Button */}
                 <button
                     onTouchStart={(e) => { e.preventDefault(); keysRef.current.p1Fire = true; }}
                     onTouchEnd={(e) => { e.preventDefault(); keysRef.current.p1Fire = false; }}
-                    className="px-6 py-5 border border-cyan-500/60 bg-cyan-950/40 text-cyan-300 font-arcade text-xs rounded active:bg-cyan-500 active:text-black shadow-[0_0_12px_rgba(0,243,255,0.3)] touch-control"
+                    className="w-24 h-24 flex items-center justify-center border-2 border-cyan-400 bg-cyan-950/60 text-cyan-300 font-arcade text-sm font-bold rounded-2xl active:bg-cyan-400 active:text-black shadow-[0_0_20px_rgba(0,243,255,0.35)] transition-all touch-control"
+                    aria-label="Fire Cannon"
                 >
                     FIRE
                 </button>
