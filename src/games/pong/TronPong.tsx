@@ -189,7 +189,7 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
     }
   }, [resetMatch]);
 
-  const { role, roomId, status, errorMsg, sendPacket, createRoom, joinRoom, disconnect } =
+  const { role, roomId, status, errorMsg, peerDisconnected, sendPacket, createRoom, joinRoom, disconnect } =
     usePeerRoom<PongNetworkPacket>(handleNetworkData);
 
   // Keep ref up to date
@@ -961,7 +961,32 @@ const TronPongComponent: React.FC<TronPongProps> = ({ onExit }) => {
             </div>
           </div>
         )}
+
+        {/* Peer Disconnected Modal Overlay */}
+        {mode === '2P_ONLINE' && peerDisconnected && !winner && (
+          <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-center p-6 text-center backdrop-blur-sm z-30">
+            <div className="w-3 h-3 rounded-full bg-red-500 animate-ping mb-3" />
+            <p className="font-cyber font-black text-xl text-red-500 drop-shadow-[0_0_10px_#ff0055] tracking-wider mb-2">
+              OPPONENT DISCONNECTED
+            </p>
+            <p className="font-arcade text-xs text-gray-400 mb-6">
+              THE REMOTE PEER HAS SEVERED THE DATA CONNECTION.
+            </p>
+            <button
+              onClick={() => {
+                sound.playBlip(400);
+                disconnect();
+                setDifficulty(null);
+              }}
+              className="px-5 py-2.5 border border-cyan-400 bg-cyan-500/20 text-cyan-300 hover:bg-cyan-400 hover:text-black font-arcade text-xs cursor-pointer shadow-[0_0_15px_rgba(0,243,255,0.4)]"
+            >
+              RETURN TO SELECTOR
+            </button>
+          </div>
+        )}
       </div>
+
+      {/* On-Screen Touch Controls (Mobile Only) */}
 
       {/* On-Screen Touch Controls (Mobile Only) */}
       <div className="flex justify-between w-full max-w-xs mt-6 px-4 md:hidden touch-control">

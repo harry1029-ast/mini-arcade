@@ -10,6 +10,7 @@ export function usePeerRoom<TPacket>(onDataReceived?: (data: TPacket) => void) {
     const [roomId, setRoomId] = useState<string>('');
     const [status, setStatus] = useState<PeerStatus>('DISCONNECTED');
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [peerDisconnected, setPeerDisconnected] = useState<boolean>(false);
 
     const peerInstanceRef = useRef<any>(null);
     const connectionRef = useRef<DataConnection | null>(null);
@@ -29,6 +30,7 @@ export function usePeerRoom<TPacket>(onDataReceived?: (data: TPacket) => void) {
         setRoomId('');
         setStatus('DISCONNECTED');
         setErrorMsg(null);
+        setPeerDisconnected(false);
     }, []);
 
     const sendPacket = useCallback((packet: TPacket) => {
@@ -80,6 +82,7 @@ export function usePeerRoom<TPacket>(onDataReceived?: (data: TPacket) => void) {
 
                 conn.on('close', () => {
                     setStatus('WAITING');
+                    setPeerDisconnected(true);
                     connectionRef.current = null;
                 });
 
@@ -145,6 +148,7 @@ export function usePeerRoom<TPacket>(onDataReceived?: (data: TPacket) => void) {
 
                 conn.on('close', () => {
                     setStatus('DISCONNECTED');
+                    setPeerDisconnected(true);
                     connectionRef.current = null;
                 });
 
@@ -175,6 +179,7 @@ export function usePeerRoom<TPacket>(onDataReceived?: (data: TPacket) => void) {
         roomId,
         status,
         errorMsg,
+        peerDisconnected,
         sendPacket,
         createRoom,
         joinRoom,
