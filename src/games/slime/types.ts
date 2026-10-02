@@ -1,6 +1,6 @@
 // src/games/slime/types.ts
 
-export type SlimeMode = '1P_AI' | '2P_LOCAL';
+export type SlimeMode = '1P_AI' | '2P_LOCAL' | '2P_ONLINE';
 export type AiServeTactic = 'FAST_SPIKE' | 'HIGH_LOB' | 'SHORT_DROP';
 
 export interface SlimeEntity {
