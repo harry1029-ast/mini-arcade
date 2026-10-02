@@ -1,0 +1,1 @@
+export { BattleTank } from './BattleTank';

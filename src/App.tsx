@@ -14,8 +14,11 @@ import { TronPong } from './games/pong';
 import { NeonTetris } from './games/tetris';
 import { VectorBreakout } from './games/breakout';
 import { CyberSlime } from './games/slime';
+import { BattleTank } from './games/tank';
+
 
 const ARCADE_GAMES: GameMetadata[] = [
+  // Game cards in mainframe
   {
     id: 'snake',
     node: 'PROTOCOL_01',
@@ -61,6 +64,15 @@ const ARCADE_GAMES: GameMetadata[] = [
     accent: 'purple',
     description: 'Sub-routine kinetic rally match. Execute surface-normal bounces, tactical leaps, and spike volleys.',
   },
+  {
+    id: 'tank',
+    node: 'PROTOCOL_06',
+    title: 'VECTOR TANK',
+    badge: 'BALLISTIC COMBAT',
+    icon: '🎯',
+    accent: 'cyan',
+    description: 'Navigate maze sectors, angle ricochet shells off reflective vector walls, and eliminate the opposing combat drone.',
+  },
 ];
 
 export default function App() {
@@ -73,6 +85,7 @@ export default function App() {
   const { highScore: tetrisHighScore } = useHighScore('tetris');
   const { highScore: breakoutHighScore } = useHighScore('breakout');
   const { highScore: slimeHighScore } = useHighScore('slime');
+  const { highScore: tankHighScore } = useHighScore('tank');
 
   const toggleSound = () => {
     const nextState = !soundActive;
@@ -111,11 +124,10 @@ export default function App() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => setCrtActive((prev) => !prev)}
-            className={`p-2 border transition-all cursor-pointer ${
-              crtActive
-                ? 'border-cyan-400 bg-cyan-400/20 text-cyan-300 shadow-[0_0_12px_rgba(0,243,255,0.4)]'
-                : 'border-gray-800 text-gray-500 hover:border-gray-700'
-            }`}
+            className={`p-2 border transition-all cursor-pointer ${crtActive
+              ? 'border-cyan-400 bg-cyan-400/20 text-cyan-300 shadow-[0_0_12px_rgba(0,243,255,0.4)]'
+              : 'border-gray-800 text-gray-500 hover:border-gray-700'
+              }`}
             title="Toggle CRT Scanline Simulation"
           >
             <Monitor className="w-4 h-4" />
@@ -123,11 +135,10 @@ export default function App() {
 
           <button
             onClick={toggleSound}
-            className={`p-2 border transition-all cursor-pointer ${
-              soundActive
-                ? 'border-emerald-400 bg-emerald-400/20 text-emerald-300 shadow-[0_0_12px_rgba(57,255,20,0.4)]'
-                : 'border-gray-800 text-gray-500 hover:border-gray-700'
-            }`}
+            className={`p-2 border transition-all cursor-pointer ${soundActive
+              ? 'border-emerald-400 bg-emerald-400/20 text-emerald-300 shadow-[0_0_12px_rgba(57,255,20,0.4)]'
+              : 'border-gray-800 text-gray-500 hover:border-gray-700'
+              }`}
             title="Toggle Audio Synthesizer"
           >
             {soundActive ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
@@ -154,18 +165,20 @@ export default function App() {
                   key={game.id}
                   game={game}
                   highScore={
-                  game.id === 'snake'
-                    ? snakeHighScore
-                    : game.id === 'pong'
-                    ? pongHighScore
-                    : game.id === 'tetris'
-                    ? tetrisHighScore
-                    : game.id === 'breakout'
-                    ? breakoutHighScore
-                    : game.id === 'slime'
-                    ? slimeHighScore
-                    : 0
-                }
+                    game.id === 'snake'
+                      ? snakeHighScore
+                      : game.id === 'pong'
+                        ? pongHighScore
+                        : game.id === 'tetris'
+                          ? tetrisHighScore
+                          : game.id === 'breakout'
+                            ? breakoutHighScore
+                            : game.id === 'slime'
+                              ? slimeHighScore
+                              : game.id === 'tank'
+                                ? tankHighScore
+                                : 0
+                  }
                   onSelect={handleSelectGame}
                 />
               ))}
@@ -181,6 +194,8 @@ export default function App() {
           <VectorBreakout onExit={() => setActiveGame(null)} />
         ) : activeGame === 'slime' ? (
           <CyberSlime onExit={() => setActiveGame(null)} />
+        ) : activeGame === 'tank' ? (
+          <BattleTank onExit={() => setActiveGame(null)} />
         ) : null}
       </main>
 
