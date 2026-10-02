@@ -13,13 +13,15 @@ export interface TankEntity {
     shootCooldown: number;
 }
 
+export type TankMode = 'SOLO' | 'LOCAL_2P';
+
 export interface Bullet {
     x: number;
     y: number;
     dir: Direction;
     speed: number;
     size: number;
-    owner: 'PLAYER' | 'ENEMY';
+    owner: 'P1' | 'P2' | 'ENEMY';
     color: string;
 }
 
