@@ -66,7 +66,7 @@ const ARCADE_GAMES: GameMetadata[] = [
   {
     id: 'tank',
     node: 'PROTOCOL_06',
-    title: 'VECTOR TANK',
+    title: 'BATTLE TANK',
     badge: 'BALLISTIC COMBAT',
     icon: '🎯',
     accent: 'cyan',

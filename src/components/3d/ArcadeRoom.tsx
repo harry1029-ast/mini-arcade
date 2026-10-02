@@ -2,6 +2,7 @@
 import React from 'react';
 import { MeshReflectorMaterial } from '@react-three/drei';
 import { ArcadeCabinet } from './ArcadeCabinet';
+import { WelcomeSign } from './WelcomeSign';
 import type { CabinetTarget } from './ArcadeControls';
 import type { GameId, GameMetadata } from '../../types/arcade';
 
@@ -30,16 +31,16 @@ export const CABINET_CONFIGS: { id: GameId; pos: [number, number, number]; rot: 
 export const ArcadeRoom: React.FC<ArcadeRoomProps> = ({ games, nearCabinet }) => {
     return (
         <group>
-            {/* 1. Global & Ambient Fill Lights */}
-            <ambientLight intensity={1.8} />
-            <directionalLight position={[0, 6, 2]} intensity={2.2} />
+            {/* 1. Global & Ambient Lights */}
+            <ambientLight intensity={1.5} />
+            <directionalLight position={[0, 6, 2]} intensity={2.0} />
 
-            {/* Hallway Center Downlight */}
+            {/* Hallway Overhead Downlights */}
             <pointLight position={[0, 3.5, 0]} color="#00f3ff" intensity={8} distance={18} />
             <pointLight position={[0, 3.5, -4]} color="#ff007f" intensity={6} distance={14} />
             <pointLight position={[0, 3.5, 4]} color="#00f3ff" intensity={6} distance={14} />
 
-            {/* Ceiling Neon Strips */}
+            {/* Ceiling Neon Light Beams */}
             <mesh position={[-2, 3.9, 0]}>
                 <boxGeometry args={[0.12, 0.08, 16]} />
                 <meshBasicMaterial color="#00f3ff" />
@@ -49,7 +50,17 @@ export const ArcadeRoom: React.FC<ArcadeRoomProps> = ({ games, nearCabinet }) =>
                 <meshBasicMaterial color="#ff007f" />
             </mesh>
 
-            {/* Floor Perimeter Neon Baseboards (Outlines the hallway boundaries) */}
+            {/* Ceiling Cross Trusses (Industrial architecture) */}
+            {[-5, -2.5, 0, 2.5, 5].map((z) => (
+                <group key={`truss-${z}`} position={[0, 3.85, z]}>
+                    <mesh>
+                        <boxGeometry args={[11.8, 0.08, 0.12]} />
+                        <meshStandardMaterial color="#1a2333" metalness={0.8} roughness={0.3} />
+                    </mesh>
+                </group>
+            ))}
+
+            {/* Floor Perimeter Neon Baseboards */}
             <mesh position={[-4.5, 0.03, 0]}>
                 <boxGeometry args={[0.06, 0.06, 16]} />
                 <meshBasicMaterial color="#00f3ff" />
@@ -58,6 +69,12 @@ export const ArcadeRoom: React.FC<ArcadeRoomProps> = ({ games, nearCabinet }) =>
                 <boxGeometry args={[0.06, 0.06, 16]} />
                 <meshBasicMaterial color="#ff007f" />
             </mesh>
+
+            {/* Tron Floor Grid */}
+            <gridHelper
+                args={[16, 24, '#00f3ff', '#162238']}
+                position={[0, 0.005, 0]}
+            />
 
             {/* Reflective Dark Floor */}
             <mesh position={[0, 0, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -80,7 +97,7 @@ export const ArcadeRoom: React.FC<ArcadeRoomProps> = ({ games, nearCabinet }) =>
             {/* Ceiling Plane */}
             <mesh position={[0, 4, 0]} rotation={[Math.PI / 2, 0, 0]}>
                 <planeGeometry args={[12, 16]} />
-                <meshStandardMaterial color="#0a0f1d" roughness={0.8} />
+                <meshStandardMaterial color="#080d1a" roughness={0.9} />
             </mesh>
 
             {/* Back Wall */}
@@ -107,7 +124,10 @@ export const ArcadeRoom: React.FC<ArcadeRoomProps> = ({ games, nearCabinet }) =>
                 <meshStandardMaterial color="#0a101f" roughness={0.6} />
             </mesh>
 
-            {/* Render 6 Cabinets */}
+            {/* Focal Neon Arcade Sign on Center Far Wall */}
+            <WelcomeSign position={[0, 2.3, -7.8]} />
+
+            {/* 6 Cabinets */}
             {CABINET_CONFIGS.map((cfg) => {
                 const meta = games.find((g) => g.id === cfg.id);
                 if (!meta) return null;
@@ -118,7 +138,7 @@ export const ArcadeRoom: React.FC<ArcadeRoomProps> = ({ games, nearCabinet }) =>
                 return (
                     <ArcadeCabinet
                         key={meta.id}
-                        nodeId={meta.node}
+                        gameId={meta.id}
                         title={meta.title}
                         accentColor={colorHex}
                         position={cfg.pos}
